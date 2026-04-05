@@ -64,3 +64,12 @@ LOW_ACTIVITY_THRESHOLD = 0.30
 PROTEIN_TARGET_G = None   # e.g. 180 — grams of protein per day
 CARBS_TARGET_G   = None   # e.g. 200 — grams of carbohydrates per day
 FAT_TARGET_G     = None   # e.g. 70  — grams of fat per day
+
+# ---------------------------------------------------------------------------
+# Biometrics — used for Mifflin-St Jeor BMR reference line
+# ---------------------------------------------------------------------------
+
+# Date of birth as YYYY-MM-DD string — age is calculated dynamically per row
+DOB        = None    # e.g. '1990-06-15'
+HEIGHT_CM  = None    # e.g. 177.8 (= 70 inches / 5'10")
+SEX        = None    # 'male' or 'female'

@@ -23,7 +23,7 @@ TDEE Method (energy balance):
 import pandas as pd
 import numpy as np
 from pathlib import Path
-from config import CALS_PER_LB, LOW_ACTIVITY_THRESHOLD
+from config import CALS_PER_LB, LOW_ACTIVITY_THRESHOLD, DOB, HEIGHT_CM, SEX
 
 DATA_DIR      = Path(__file__).parent
 PROCESSED_DIR = DATA_DIR / 'data' / 'processed'
@@ -123,6 +123,20 @@ def build_tdee_results():
     results['weekly_weight_change'] = (
         results['weight_7d_avg'].diff(7)  # change over 7 days
     )
+
+    # Mifflin-St Jeor TDEE reference line
+    # BMR (male)   = 10×kg + 6.25×cm − 5×age + 5
+    # BMR (female) = 10×kg + 6.25×cm − 5×age − 161
+    # TDEE = BMR × 1.2 (sedentary baseline) + 14-day rolling exercise avg
+    # Weight input: weight_smooth (same 7-day trailing avg used by rolling_tdee)
+    # Age input: calculated per row from DOB so birthday transitions are captured
+    if DOB and HEIGHT_CM and SEX:
+        dob_ts  = pd.Timestamp(DOB)
+        ages    = ((df.index - dob_ts).days / 365.25).astype(int)
+        wt_kg   = df['weight_smooth'] / 2.20462
+        offset  = 5 if SEX == 'male' else -161
+        mst_bmr = 10 * wt_kg + 6.25 * HEIGHT_CM - 5 * ages + offset
+        results['mst_tdee'] = mst_bmr * 1.2 + results['exercise_14d_avg']
 
     results.to_csv(PROCESSED_DIR / 'tdee_results.csv')
     print("tdee_results.csv written")

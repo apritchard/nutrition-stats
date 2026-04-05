@@ -118,6 +118,16 @@ def chart_tdee(unified, tdee):
         hovertemplate='Avg intake: %{y:.0f} cal<extra></extra>',
     ), row=1, col=1)
 
+    # Mifflin-St Jeor formula reference (BMR × 1.2 + 14d exercise avg)
+    if 'mst_tdee' in tdee.columns:
+        mst = tdee['mst_tdee'].dropna()
+        fig.add_trace(go.Scatter(
+            x=mst.index, y=mst.values,
+            mode='lines', name='MSJ formula (BMR×1.2 + exercise)',
+            line=dict(color=COLORS['mst_tdee'], width=1.5, dash='dot'),
+            hovertemplate='MSJ: %{y:.0f} cal<extra></extra>',
+        ), row=1, col=1)
+
     # --- Calorie intake bars ---
     fig.add_trace(go.Bar(
         x=tdee.index, y=tdee['calories_in'],
@@ -212,6 +222,16 @@ def chart_dashboard(unified, tdee):
         line=dict(color=COLORS['calories_avg'], width=1.5, dash='dot'),
         hovertemplate='Avg intake: %{y:.0f}<extra></extra>',
     ), row=2, col=1)
+
+    # Mifflin-St Jeor formula reference
+    if 'mst_tdee' in tdee.columns:
+        mst = tdee['mst_tdee'].dropna()
+        fig.add_trace(go.Scatter(
+            x=mst.index, y=mst.values,
+            mode='lines', name='MSJ formula (BMR×1.2 + exercise)',
+            line=dict(color=COLORS['mst_tdee'], width=1.5, dash='dot'),
+            hovertemplate='MSJ: %{y:.0f}<extra></extra>',
+        ), row=2, col=1)
 
     # === Row 3: Calories + Exercise ===
     fig.add_trace(go.Bar(

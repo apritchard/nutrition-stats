@@ -188,6 +188,16 @@ def chart_tdee_trend(unified, tdee):
         hovertemplate='Adj trend: %{y:.0f} cal<extra></extra>',
     ))
 
+    # --- Mifflin-St Jeor formula reference line ---
+    if 'mst_tdee' in tdee.columns:
+        mst = tdee['mst_tdee'].reindex(raw_series.index)
+        fig.add_trace(go.Scatter(
+            x=mst.index, y=mst.values,
+            mode='lines', name='MSJ formula (BMR×1.2 + exercise)',
+            line=dict(color=COLORS['mst_tdee'], width=2, dash='dot'),
+            hovertemplate='%{x|%b %d} MSJ: %{y:.0f} cal<extra></extra>',
+        ))
+
     # --- Summary annotation ---
     ols_diff  = (b0_ols + b1_ols * x_raw[-1]) - (b0_ols + b1_ols * x_raw[0])
     ts_diff   = (b0_ts  + b1_ts  * x_raw[-1]) - (b0_ts  + b1_ts  * x_raw[0])

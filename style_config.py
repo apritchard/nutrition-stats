@@ -57,6 +57,9 @@ COLORS = {
     'today_line':         '#aaaaaa',
     'safety_floor':       '#C00000',
 
+    # Mifflin-St Jeor formula reference
+    'mst_tdee':           '#00ACC1',
+
     # Macronutrients
     'macro_protein':      '#9B59B6',
     'macro_protein_fill': 'rgba(155, 89, 182, 0.4)',
