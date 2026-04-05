@@ -5,6 +5,9 @@ data/exports/*.csv
 __pycache__/
 *.pyc
 
+# Personal config (copy config.example.py → config.py to get started)
+config.py
+
 # IDE
 .idea/
 

@@ -23,10 +23,10 @@ TDEE Method (energy balance):
 import pandas as pd
 import numpy as np
 from pathlib import Path
+from config import CALS_PER_LB, LOW_ACTIVITY_THRESHOLD
 
 DATA_DIR      = Path(__file__).parent
 PROCESSED_DIR = DATA_DIR / 'data' / 'processed'
-CALS_PER_LB   = 3500
 
 
 def rolling_tdee(df, window_days, weight_col='weight_smooth'):
@@ -113,7 +113,7 @@ def build_tdee_results():
     # Low-activity flag: 14d exercise avg is below 30% of its overall median.
     # Used to shade outlier periods on trend charts.
     ex_median = results['exercise_14d_avg'].median()
-    results['low_activity'] = results['exercise_14d_avg'] < (ex_median * 0.30)
+    results['low_activity'] = results['exercise_14d_avg'] < (ex_median * LOW_ACTIVITY_THRESHOLD)
 
     # Daily calorie deficit (positive = deficit, negative = surplus)
     results['daily_deficit_14d'] = results['tdee_14d'] - results['calories_in']

@@ -12,27 +12,12 @@ import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from pathlib import Path
+from config import GOAL_WEIGHT
+from style_config import COLORS, HOVER, TEMPLATE
 
 DATA_DIR      = Path(__file__).parent
 PROCESSED_DIR = DATA_DIR / 'data' / 'processed'
 CHARTS_DIR    = DATA_DIR / 'charts'
-
-COLORS = {
-    'weight_raw':    '#5B9BD5',
-    'weight_7d':     '#2E75B6',
-    'weight_14d':    '#1F4E79',
-    'tdee_7d':       '#ED7D31',
-    'tdee_14d':      '#C55A11',
-    'calories_in':   '#FF6B6B',
-    'calories_avg':  '#C0392B',
-    'exercise':      '#27AE60',
-    'exercise_avg':  '#1E8449',
-    'deficit':       '#8E44AD',
-    'estimated':     '#F39C12',
-}
-
-HOVER = 'x unified'
-TEMPLATE = 'plotly_white'
 
 
 def load_data():
@@ -366,7 +351,7 @@ def chart_full_dashboard(unified, tdee, output_path=None):
   </div>
 
   <div class="card">
-    <h2>Recommended Calorie Targets &mdash; Goal: 175 lbs</h2>
+    <h2>Recommended Calorie Targets &mdash; Goal: {GOAL_WEIGHT} lbs</h2>
     {to_div(figs['cal_targets'], height=520)}
   </div>
 

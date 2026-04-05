@@ -8,6 +8,18 @@ Interactive charts for personal health data — weight, nutrition, TDEE, and exe
 pip install -r requirements.txt
 ```
 
+### Configuration
+
+Copy the example config and fill in your personal values:
+
+```bash
+cp config.example.py config.py
+```
+
+Then edit `config.py` with your goal weight, estimated TDEE at goal, calorie floor, etc. `config.py` is gitignored so your personal data stays local.
+
+To customize chart colors and style, edit `style_config.py` — this file is committed and safe to share.
+
 ## Adding new data
 
 Drop new export CSVs into `data/exports/`. The pipeline auto-discovers files by name pattern, so no code changes are needed:
@@ -62,10 +74,13 @@ python visualize_extra.py # rebuild supplemental charts (requires both processed
 
 ```
 data/
-  exports/      ← drop new export CSVs here
-  processed/    ← auto-generated intermediates (gitignored)
-charts/         ← auto-generated HTML output (gitignored)
-archive/        ← one-off scripts and old outputs
+  exports/        ← drop new export CSVs here
+  processed/      ← auto-generated intermediates (gitignored)
+charts/           ← auto-generated HTML output (gitignored)
+archive/          ← one-off scripts and old outputs
+config.py         ← your personal settings (gitignored — copy from config.example.py)
+config.example.py ← template for personal config
+style_config.py   ← chart colors and theme (committed)
 aggregate.py
 tdee.py
 visualize.py

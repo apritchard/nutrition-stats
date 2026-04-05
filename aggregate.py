@@ -20,11 +20,11 @@ Columns in output:
 import pandas as pd
 import numpy as np
 from pathlib import Path
+from config import STANDARD_MEALS
 
 DATA_DIR      = Path(__file__).parent
 EXPORTS_DIR   = DATA_DIR / 'data' / 'exports'
 PROCESSED_DIR = DATA_DIR / 'data' / 'processed'
-STANDARD_MEALS = ['Breakfast', 'Lunch', 'Dinner', 'Snacks']
 
 # Nutrition columns to aggregate (all numeric columns except Date, Meal, Note)
 SKIP_COLS = {'Date', 'Meal', 'Note'}

@@ -13,20 +13,15 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from pathlib import Path
 from datetime import timedelta
+from config import (
+    GOAL_WEIGHT, GOAL_WEIGHT_MILESTONES, GOAL_TDEE, GOAL_DEFICIT_AT_TARGET,
+    SAFE_FLOOR, PROJECTION_LOOKBACK_DAYS, PROJECTION_DAYS_FORWARD, CALS_PER_LB,
+)
+from style_config import COLORS, TEMPLATE, HOVER
 
 DATA_DIR      = Path(__file__).parent
 PROCESSED_DIR = DATA_DIR / 'data' / 'processed'
 CHARTS_DIR    = DATA_DIR / 'charts'
-TEMPLATE = 'plotly_white'
-HOVER    = 'x unified'
-
-# Target weights to annotate on the projection chart
-GOAL_WEIGHTS = [200, 190, 180, 175]
-
-# How many days of recent smoothed weight to fit the trend from
-PROJECTION_LOOKBACK_DAYS = 60
-# How many days forward to project
-PROJECTION_DAYS_FORWARD  = 270
 
 
 def load_data():
@@ -143,18 +138,18 @@ def chart_tdee_trend(unified, tdee):
     for i, (start, end) in enumerate(low_act_spans):
         fig.add_vrect(
             x0=start, x1=end,
-            fillcolor='rgba(100,100,100,0.10)',
+            fillcolor=COLORS['low_activity_fill'],
             line_width=0,
             annotation_text='Low activity' if i == 0 else '',
             annotation_position='top left',
-            annotation_font=dict(size=10, color='#666'),
+            annotation_font=dict(size=10, color=COLORS['low_activity_text']),
         )
 
     # --- Raw TDEE ---
     fig.add_trace(go.Scatter(
         x=raw_series.index, y=raw_series.values,
         mode='lines', name='TDEE gross (14d smoothed)',
-        line=dict(color='#ED7D31', width=2),
+        line=dict(color=COLORS['tdee_7d'], width=2),
         hovertemplate='%{x|%b %d} gross: %{y:.0f} cal<extra></extra>',
     ))
 
@@ -162,7 +157,7 @@ def chart_tdee_trend(unified, tdee):
     fig.add_trace(go.Scatter(
         x=adj_series.index, y=adj_series.values,
         mode='lines', name='TDEE ex-adjusted (14d smoothed)',
-        line=dict(color='#5B9BD5', width=2),
+        line=dict(color=COLORS['weight_raw'], width=2),
         hovertemplate='%{x|%b %d} adj: %{y:.0f} cal<extra></extra>',
     ))
 
@@ -171,7 +166,7 @@ def chart_tdee_trend(unified, tdee):
     fig.add_trace(go.Scatter(
         x=raw_series.index, y=ols_y,
         mode='lines', name=f'OLS trend (gross): {fmt_slope(b1_ols)}',
-        line=dict(color='#C55A11', width=1.5, dash='dash'),
+        line=dict(color=COLORS['ols_trend'], width=1.5, dash='dash'),
         hovertemplate='OLS: %{y:.0f} cal<extra></extra>',
     ))
 
@@ -180,7 +175,7 @@ def chart_tdee_trend(unified, tdee):
     fig.add_trace(go.Scatter(
         x=raw_series.index, y=ts_y,
         mode='lines', name=f'Theil-Sen trend (gross): {fmt_slope(b1_ts)}',
-        line=dict(color='#C00000', width=2.5, dash='longdash'),
+        line=dict(color=COLORS['ts_trend'], width=2.5, dash='longdash'),
         hovertemplate='Theil-Sen: %{y:.0f} cal<extra></extra>',
     ))
 
@@ -189,7 +184,7 @@ def chart_tdee_trend(unified, tdee):
     fig.add_trace(go.Scatter(
         x=raw_series.index, y=adj_trend_y,
         mode='lines', name=f'Theil-Sen trend (ex-adj): {fmt_slope(b1_adj)}',
-        line=dict(color='#1F4E79', width=2.5, dash='longdash'),
+        line=dict(color=COLORS['ts_adj_trend'], width=2.5, dash='longdash'),
         hovertemplate='Adj trend: %{y:.0f} cal<extra></extra>',
     ))
 
@@ -274,16 +269,16 @@ def chart_dow_patterns(unified, tdee):
     fig.add_trace(go.Bar(
         x=DOW_SHORT, y=stats['cal_mean'],
         name='Calories Eaten',
-        marker_color='#FF6B6B', opacity=0.85,
-        error_y=dict(type='data', array=stats['cal_std'], visible=True, color='#c0392b'),
+        marker_color=COLORS['calories_in'], opacity=0.85,
+        error_y=dict(type='data', array=stats['cal_std'], visible=True, color=COLORS['calories_avg']),
         hovertemplate='%{x} eaten: <b>%{y:.0f}</b> cal (avg)<extra></extra>',
     ), row=1, col=1)
 
     fig.add_trace(go.Bar(
         x=DOW_SHORT, y=stats['ex_mean'],
         name='Exercise Calories',
-        marker_color='#27AE60', opacity=0.85,
-        error_y=dict(type='data', array=stats['ex_std'], visible=True, color='#1E8449'),
+        marker_color=COLORS['exercise'], opacity=0.85,
+        error_y=dict(type='data', array=stats['ex_std'], visible=True, color=COLORS['exercise_avg']),
         hovertemplate='%{x} exercise: <b>%{y:.0f}</b> cal (avg)<extra></extra>',
     ), row=1, col=1)
 
@@ -291,7 +286,7 @@ def chart_dow_patterns(unified, tdee):
     fig.add_trace(go.Scatter(
         x=DOW_SHORT, y=stats['net_mean'],
         mode='lines+markers', name='Net Calories (eaten - exercise)',
-        line=dict(color='#2C3E50', width=2.5),
+        line=dict(color=COLORS['net_calories'], width=2.5),
         marker=dict(size=8, symbol='diamond'),
         hovertemplate='%{x} net: <b>%{y:.0f}</b> cal<extra></extra>',
     ), row=1, col=1)
@@ -304,7 +299,7 @@ def chart_dow_patterns(unified, tdee):
             x=[DOW_SHORT[i]] * len(day_data),
             y=day_data.values,
             mode='markers',
-            marker=dict(color='#C0392B', size=4, opacity=0.3),
+            marker=dict(color=COLORS['calories_avg'], size=4, opacity=0.3),
             showlegend=(i == 0),
             name='Individual days',
             hovertemplate=f'{DOW_SHORT[i]}: %{{y:.0f}} cal<extra></extra>',
@@ -314,7 +309,7 @@ def chart_dow_patterns(unified, tdee):
     fig.add_trace(go.Bar(
         x=DOW_SHORT, y=stats['exmin_mean'],
         name='Exercise Minutes',
-        marker_color='#5B9BD5', opacity=0.85,
+        marker_color=COLORS['weight_raw'], opacity=0.85,
         hovertemplate='%{x}: <b>%{y:.0f}</b> min (avg)<extra></extra>',
     ), row=2, col=1)
 
@@ -323,7 +318,7 @@ def chart_dow_patterns(unified, tdee):
                                for i in range(7))
     fig.add_annotation(
         x=0.5, y=-0.12, xref='paper', yref='paper',
-        text=count_text, showarrow=False, font=dict(size=10, color='#666'),
+        text=count_text, showarrow=False, font=dict(size=10, color=COLORS['low_activity_text']),
         align='center',
     )
 
@@ -392,7 +387,7 @@ def chart_projection(unified, tdee):
     fig.add_trace(go.Scatter(
         x=smoothed.index, y=smoothed.values,
         mode='lines', name='7-Day Avg Weight',
-        line=dict(color='#2E75B6', width=2),
+        line=dict(color=COLORS['weight_7d'], width=2),
         hovertemplate='%{x|%b %d}: %{y:.1f} lbs<extra></extra>',
     ))
 
@@ -400,7 +395,7 @@ def chart_projection(unified, tdee):
     fig.add_trace(go.Scatter(
         x=tdee.index[raw_mask], y=tdee.loc[raw_mask, 'weight_raw'],
         mode='markers', name='Measured Weight',
-        marker=dict(color='#5B9BD5', size=6, symbol='circle'),
+        marker=dict(color=COLORS['weight_raw'], size=6, symbol='circle'),
         hovertemplate='%{x|%b %d}: %{y:.1f} lbs (measured)<extra></extra>',
     ))
 
@@ -408,7 +403,7 @@ def chart_projection(unified, tdee):
     fig.add_trace(go.Scatter(
         x=recent.index, y=hist_trend_y,
         mode='lines', name=f'Trend fit (last {PROJECTION_LOOKBACK_DAYS}d)',
-        line=dict(color='#C00000', width=1.5, dash='dash'),
+        line=dict(color=COLORS['projection'], width=1.5, dash='dash'),
         hovertemplate='Trend: %{y:.1f} lbs<extra></extra>',
     ))
 
@@ -416,7 +411,7 @@ def chart_projection(unified, tdee):
     fig.add_trace(go.Scatter(
         x=future_dates, y=proj_y,
         mode='lines', name='Projected (linear)',
-        line=dict(color='#C00000', width=2),
+        line=dict(color=COLORS['projection'], width=2),
         hovertemplate='%{x|%b %d} projected: %{y:.1f} lbs<extra></extra>',
     ))
 
@@ -425,14 +420,14 @@ def chart_projection(unified, tdee):
         x=np.concatenate([future_dates, future_dates[::-1]]),
         y=np.concatenate([pi_hi, pi_lo[::-1]]),
         fill='toself',
-        fillcolor='rgba(192,0,0,0.08)',
+        fillcolor=COLORS['projection_band'],
         line=dict(color='rgba(0,0,0,0)'),
         name='95% prediction interval',
         hoverinfo='skip',
     ))
 
     # Goal weight lines + date labels
-    for goal in GOAL_WEIGHTS:
+    for goal in GOAL_WEIGHT_MILESTONES:
         current_min = smoothed.iloc[-1]
         if goal >= current_min:
             continue  # already past this goal
@@ -449,10 +444,10 @@ def chart_projection(unified, tdee):
 
         fig.add_hline(
             y=goal,
-            line=dict(color='#27AE60', width=1.5, dash='dot'),
+            line=dict(color=COLORS['goal_line'], width=1.5, dash='dot'),
             annotation_text=f"  {goal} lbs ~ {cross_date.strftime('%b %d, %Y')}",
             annotation_position='top left',
-            annotation_font=dict(size=11, color='#1E8449'),
+            annotation_font=dict(size=11, color=COLORS['goal_label']),
         )
 
     # Rate annotation
@@ -482,7 +477,7 @@ def chart_projection(unified, tdee):
     fig_to_return = fig
 
     print(f"Wrote {out.name}  |  Rate: {weekly_rate:+.2f} lbs/week")
-    for goal in GOAL_WEIGHTS:
+    for goal in GOAL_WEIGHT_MILESTONES:
         current_min = smoothed.iloc[-1]
         if goal >= current_min:
             continue
@@ -502,7 +497,7 @@ def chart_projection(unified, tdee):
 # Chart 4: Recommended calorie targets as TDEE declines
 # ---------------------------------------------------------------------------
 
-def chart_calorie_targets(unified, tdee, goal_weight=175, goal_deficit_at_target=250, goal_tdee=2743):
+def chart_calorie_targets(unified, tdee, goal_weight=GOAL_WEIGHT, goal_deficit_at_target=GOAL_DEFICIT_AT_TARGET, goal_tdee=GOAL_TDEE):
     """
     Simulates weight loss with a weight-keyed tapering deficit and derives the timeline.
 
@@ -520,8 +515,6 @@ def chart_calorie_targets(unified, tdee, goal_weight=175, goal_deficit_at_target
       1. Calories over time: TDEE, recommended intake, monthly targets
       2. Simulated weight progress toward goal
     """
-    CALS_PER_LB  = 3500
-    SAFE_FLOOR   = 1500
     HIST_CONTEXT = 60
     MAX_SIM_DAYS = 730   # safety cap on simulation (2 years)
 
@@ -598,7 +591,7 @@ def chart_calorie_targets(unified, tdee, goal_weight=175, goal_deficit_at_target
     fig.add_trace(go.Scatter(
         x=hist_tdee.index, y=hist_tdee.values,
         mode='lines', name='TDEE (historical)',
-        line=dict(color='#ED7D31', width=2),
+        line=dict(color=COLORS['tdee_7d'], width=2),
         hovertemplate='%{x|%b %d} TDEE: %{y:.0f}<extra></extra>',
     ), row=1, col=1)
 
@@ -606,7 +599,7 @@ def chart_calorie_targets(unified, tdee, goal_weight=175, goal_deficit_at_target
     fig.add_trace(go.Scatter(
         x=hist_intake.index, y=hist_intake.values,
         mode='lines', name='Actual intake (14d avg)',
-        line=dict(color='#FF6B6B', width=2),
+        line=dict(color=COLORS['calories_in'], width=2),
         hovertemplate='%{x|%b %d} intake: %{y:.0f}<extra></extra>',
     ), row=1, col=1)
 
@@ -614,7 +607,7 @@ def chart_calorie_targets(unified, tdee, goal_weight=175, goal_deficit_at_target
     fig.add_trace(go.Scatter(
         x=sim.index, y=sim['tdee'],
         mode='lines', name='Projected TDEE (ex-adj decline)',
-        line=dict(color='#ED7D31', width=2, dash='dash'),
+        line=dict(color=COLORS['tdee_7d'], width=2, dash='dash'),
         hovertemplate='%{x|%b %d} proj TDEE: %{y:.0f}<extra></extra>',
     ), row=1, col=1)
 
@@ -622,7 +615,7 @@ def chart_calorie_targets(unified, tdee, goal_weight=175, goal_deficit_at_target
     fig.add_trace(go.Scatter(
         x=sim.index, y=sim['intake'],
         mode='lines', name='Recommended intake (tapering deficit)',
-        line=dict(color='#27AE60', width=2.5),
+        line=dict(color=COLORS['intake_rec'], width=2.5),
         hovertemplate='%{x|%b %d} target: %{y:.0f} cal (%{customdata:.1f} lbs/wk deficit)<extra></extra>',
         customdata=sim['rate_lbs_week'],
     ), row=1, col=1)
@@ -635,15 +628,15 @@ def chart_calorie_targets(unified, tdee, goal_weight=175, goal_deficit_at_target
             x=month_start, y=intake_val, row=1, col=1,
             text=f"<b>{intake_val:.0f}</b>",
             showarrow=True, arrowhead=2, arrowsize=0.8,
-            arrowcolor='#1E8449', ax=0, ay=-30,
-            font=dict(size=10, color='#1E8449'),
-            bgcolor='white', bordercolor='#27AE60', borderwidth=1,
+            arrowcolor=COLORS['goal_label'], ax=0, ay=-30,
+            font=dict(size=10, color=COLORS['goal_label']),
+            bgcolor='white', bordercolor=COLORS['goal_line'], borderwidth=1,
         )
 
     # Safety floor
     fig.add_shape(type='line', xref='x', yref='y',
         x0=sim.index[0], x1=sim.index[-1], y0=SAFE_FLOOR, y1=SAFE_FLOOR,
-        line=dict(color='#C00000', width=1, dash='dot'), row=1, col=1,
+        line=dict(color=COLORS['safety_floor'], width=1, dash='dot'), row=1, col=1,
     )
 
     # Today line (row 1 + row 2)
@@ -651,7 +644,7 @@ def chart_calorie_targets(unified, tdee, goal_weight=175, goal_deficit_at_target
         fig.add_shape(type='line', xref='x', yref='paper',
             x0=last_date, x1=last_date,
             y0=(0.42 if row == 1 else 0), y1=(1.0 if row == 1 else 0.38),
-            line=dict(color='#aaa', width=1, dash='dot'),
+            line=dict(color=COLORS['today_line'], width=1, dash='dot'),
         )
     fig.add_annotation(
         x=last_date, y=1.01, xref='x', yref='paper',
@@ -666,7 +659,7 @@ def chart_calorie_targets(unified, tdee, goal_weight=175, goal_deficit_at_target
     fig.add_trace(go.Scatter(
         x=hist_weight.index, y=hist_weight.values,
         mode='lines', name='Weight (7d avg, historical)',
-        line=dict(color='#2E75B6', width=2),
+        line=dict(color=COLORS['weight_7d'], width=2),
         hovertemplate='%{x|%b %d}: %{y:.1f} lbs<extra></extra>',
     ), row=2, col=1)
 
@@ -674,19 +667,19 @@ def chart_calorie_targets(unified, tdee, goal_weight=175, goal_deficit_at_target
     fig.add_trace(go.Scatter(
         x=sim.index, y=sim['weight'],
         mode='lines', name='Simulated weight',
-        line=dict(color='#2E75B6', width=2, dash='dash'),
+        line=dict(color=COLORS['weight_7d'], width=2, dash='dash'),
         hovertemplate='%{x|%b %d} sim: %{y:.1f} lbs<extra></extra>',
     ), row=2, col=1)
 
     # Goal weight line
     fig.add_shape(type='line', xref='x', yref='y',
         x0=hist_weight.index[0], x1=goal_date, y0=goal_weight, y1=goal_weight,
-        line=dict(color='#27AE60', width=1.5, dash='dot'), row=2, col=1,
+        line=dict(color=COLORS['goal_line'], width=1.5, dash='dot'), row=2, col=1,
     )
     fig.add_annotation(
         x=goal_date, y=goal_weight, row=2, col=1,
         text=f'  {goal_weight} lbs  {goal_date.strftime("%b %Y")}',
-        showarrow=False, font=dict(size=11, color='#27AE60'),
+        showarrow=False, font=dict(size=11, color=COLORS['goal_line']),
         xanchor='left',
     )
 
