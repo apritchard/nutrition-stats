@@ -400,6 +400,8 @@ def chart_full_dashboard(unified, tdee, output_path=None):
       <button onclick="setLast(30)">30d</button>
       <button onclick="setLast(60)">60d</button>
       <button onclick="setLast(90)">90d</button>
+      <button onclick="setLastMonths(6)">6m</button>
+      <button onclick="setLastMonths(12)">1y</button>
     </div>
   </div>
 
@@ -465,6 +467,17 @@ def chart_full_dashboard(unified, tdee, output_path=None):
       var end   = new Date(DATA_MAX);
       var start = new Date(end);
       start.setDate(start.getDate() - days + 1);
+      var fmt = function(d) {{ return d.toISOString().slice(0,10); }};
+      document.getElementById('date-start').value = fmt(start);
+      document.getElementById('date-end').value   = fmt(end);
+      relayoutCharts(fmt(start), fmt(end));
+    }}
+
+    function setLastMonths(months) {{
+      var end   = new Date(DATA_MAX);
+      var start = new Date(end);
+      start.setMonth(start.getMonth() - months);
+      start.setDate(start.getDate() + 1);
       var fmt = function(d) {{ return d.toISOString().slice(0,10); }};
       document.getElementById('date-start').value = fmt(start);
       document.getElementById('date-end').value   = fmt(end);
