@@ -1,6 +1,7 @@
 # Generated outputs — rebuild with: python run_all.py
 data/processed/
 charts/
+data/exports/*.csv
 __pycache__/
 *.pyc
 
