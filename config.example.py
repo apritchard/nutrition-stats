@@ -56,3 +56,11 @@ STANDARD_MEALS = ['Breakfast', 'Lunch', 'Dinner', 'Snacks']
 # Days where 14-day rolling exercise average falls below this fraction of the
 # overall median are flagged as low-activity periods (shaded on TDEE trend chart).
 LOW_ACTIVITY_THRESHOLD = 0.30
+
+# ---------------------------------------------------------------------------
+# Macro targets (grams/day) — set to None to omit the target line from charts
+# ---------------------------------------------------------------------------
+
+PROTEIN_TARGET_G = None   # e.g. 180 — grams of protein per day
+CARBS_TARGET_G   = None   # e.g. 200 — grams of carbohydrates per day
+FAT_TARGET_G     = None   # e.g. 70  — grams of fat per day

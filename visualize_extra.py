@@ -727,6 +727,285 @@ def chart_calorie_targets(unified, tdee, goal_weight=GOAL_WEIGHT, goal_deficit_a
 
 
 # ---------------------------------------------------------------------------
+# Chart 5: Macronutrient breakdown
+# ---------------------------------------------------------------------------
+
+def chart_macros(unified, tdee):
+    """
+    Three-panel macronutrient breakdown.
+
+    Panel 1: Protein (g/day) — daily bars + 7d rolling avg + optional target line
+    Panel 2: Carbohydrates & Fat (g/day) — 7d rolling avg lines + optional targets
+    Panel 3: Macro split — stacked area of % calories from each macro (7d rolling)
+    """
+    from config import PROTEIN_TARGET_G, CARBS_TARGET_G, FAT_TARGET_G
+
+    df = tdee[['protein_g', 'carbs_g', 'fat_g']].dropna(how='all')
+
+    p_avg = df['protein_g'].rolling(7, min_periods=4).mean()
+    c_avg = df['carbs_g'].rolling(7, min_periods=4).mean()
+    f_avg = df['fat_g'].rolling(7, min_periods=4).mean()
+
+    # Calorie contributions: protein & carbs = 4 cal/g, fat = 9 cal/g
+    p_cals    = df['protein_g'] * 4
+    c_cals    = df['carbs_g']   * 4
+    f_cals    = df['fat_g']     * 9
+    total_cal = (p_cals + c_cals + f_cals).replace(0, np.nan)
+
+    p_pct = (p_cals / total_cal * 100).rolling(7, min_periods=4).mean()
+    c_pct = (c_cals / total_cal * 100).rolling(7, min_periods=4).mean()
+    f_pct = (f_cals / total_cal * 100).rolling(7, min_periods=4).mean()
+
+    fig = make_subplots(
+        rows=3, cols=1,
+        shared_xaxes=True,
+        subplot_titles=(
+            'Protein (g/day)',
+            'Carbohydrates & Fat (g/day)',
+            'Macro Split — % of calories (7-day rolling)',
+        ),
+        vertical_spacing=0.07,
+        row_heights=[0.33, 0.33, 0.34],
+    )
+
+    # --- Row 1: Protein ---
+    fig.add_trace(go.Bar(
+        x=df.index, y=df['protein_g'],
+        name='Protein (daily)', marker_color=COLORS['macro_protein'], opacity=0.35,
+        hovertemplate='%{x|%b %d}: %{y:.0f}g<extra></extra>',
+    ), row=1, col=1)
+    fig.add_trace(go.Scatter(
+        x=df.index, y=p_avg,
+        name='Protein 7d avg', line=dict(color=COLORS['macro_protein'], width=2),
+        hovertemplate='7d avg: %{y:.0f}g<extra></extra>',
+    ), row=1, col=1)
+    if PROTEIN_TARGET_G:
+        fig.add_hline(
+            y=PROTEIN_TARGET_G,
+            line=dict(color=COLORS['macro_protein'], width=1.5, dash='dot'),
+            annotation_text=f'  Target: {PROTEIN_TARGET_G}g',
+            annotation_position='top left',
+            annotation_font=dict(size=10, color=COLORS['macro_protein']),
+            row=1, col=1,
+        )
+
+    # --- Row 2: Carbs & Fat ---
+    fig.add_trace(go.Scatter(
+        x=df.index, y=c_avg,
+        name='Carbs 7d avg', line=dict(color=COLORS['macro_carbs'], width=2),
+        hovertemplate='Carbs 7d avg: %{y:.0f}g<extra></extra>',
+    ), row=2, col=1)
+    fig.add_trace(go.Scatter(
+        x=df.index, y=f_avg,
+        name='Fat 7d avg', line=dict(color=COLORS['macro_fat'], width=2),
+        hovertemplate='Fat 7d avg: %{y:.0f}g<extra></extra>',
+    ), row=2, col=1)
+    if CARBS_TARGET_G:
+        fig.add_hline(
+            y=CARBS_TARGET_G,
+            line=dict(color=COLORS['macro_carbs'], width=1.5, dash='dot'),
+            annotation_text=f'  Target: {CARBS_TARGET_G}g',
+            annotation_position='top left',
+            annotation_font=dict(size=10, color=COLORS['macro_carbs']),
+            row=2, col=1,
+        )
+    if FAT_TARGET_G:
+        fig.add_hline(
+            y=FAT_TARGET_G,
+            line=dict(color=COLORS['macro_fat'], width=1.5, dash='dot'),
+            annotation_text=f'  Target: {FAT_TARGET_G}g',
+            annotation_position='top left',
+            annotation_font=dict(size=10, color=COLORS['macro_fat']),
+            row=2, col=1,
+        )
+
+    # --- Row 3: Stacked macro ratio ---
+    for name, pct, color, fill in [
+        ('Fat %',     f_pct, COLORS['macro_fat'],     COLORS['macro_fat_fill']),
+        ('Carbs %',   c_pct, COLORS['macro_carbs'],   COLORS['macro_carbs_fill']),
+        ('Protein %', p_pct, COLORS['macro_protein'], COLORS['macro_protein_fill']),
+    ]:
+        fig.add_trace(go.Scatter(
+            x=df.index, y=pct,
+            name=name, stackgroup='macros',
+            line=dict(color=color, width=1),
+            fillcolor=fill,
+            hovertemplate=f'{name}: %{{y:.0f}}%<extra></extra>',
+        ), row=3, col=1)
+
+    fig.update_layout(
+        title='<b>Macronutrient Breakdown</b>',
+        hovermode=HOVER,
+        template=TEMPLATE,
+        height=850,
+        margin=dict(b=100),
+        legend=dict(orientation='h', yanchor='top', y=-0.05, xanchor='center', x=0.5),
+    )
+    fig.update_yaxes(title_text='grams',        row=1, col=1)
+    fig.update_yaxes(title_text='grams',        row=2, col=1)
+    fig.update_yaxes(title_text='% of calories', row=3, col=1)
+    fig.update_xaxes(title_text='Date',          row=3, col=1)
+
+    out = CHARTS_DIR / 'chart_macros.html'
+    fig.write_html(str(out))
+    print(f"Wrote {out.name}")
+    return fig
+
+
+# ---------------------------------------------------------------------------
+# Chart 6: Week-by-week summary
+# ---------------------------------------------------------------------------
+
+def chart_weekly_summary(unified, tdee):
+    """
+    Week-by-week overview with range selector for scrolling through history.
+
+    Panel 1: Weekly avg calories in vs avg TDEE
+    Panel 2: Actual weekly weight change vs expected change derived from deficit
+    Panel 3: Scrollable summary table (all weeks)
+
+    The range selector buttons (4W / 8W / 3M / All) zoom the two chart panels
+    in sync. The table always shows the full history and scrolls independently.
+    """
+
+    # --- Weekly aggregation, weeks ending Sunday ---
+    w = tdee.resample('W-SUN').agg(
+        avg_calories  = ('calories_in',        'mean'),
+        avg_tdee      = ('tdee_14d_smoothed',   'mean'),
+        avg_deficit   = ('daily_deficit_14d',   'mean'),
+        avg_exercise  = ('exercise_calories',   'mean'),
+        end_weight    = ('weight_7d_avg',        'last'),
+        exercise_days = ('exercise_minutes',     lambda x: int((x > 0).sum())),
+        logged_days   = ('calories_in',          lambda x: int(x.notna().sum())),
+    ).dropna(subset=['avg_calories', 'end_weight'])
+
+    w['weight_change']   = w['end_weight'].diff()
+    w['expected_change'] = -(w['avg_deficit'] * 7 / CALS_PER_LB)
+
+    # --- Subplot: 2 chart rows + 1 table row ---
+    fig = make_subplots(
+        rows=3, cols=1,
+        specs=[[{'type': 'xy'}], [{'type': 'xy'}], [{'type': 'table'}]],
+        shared_xaxes=True,
+        subplot_titles=(
+            'Weekly Avg: Calories In vs TDEE',
+            'Weight Change: Actual vs Expected from Deficit',
+            'Week-by-Week Summary',
+        ),
+        vertical_spacing=0.05,
+        row_heights=[0.28, 0.28, 0.44],
+    )
+
+    # --- Row 1: Avg calories (bars) vs avg TDEE (line) ---
+    fig.add_trace(go.Bar(
+        x=w.index, y=w['avg_calories'],
+        name='Avg Calories In', marker_color=COLORS['calories_in'], opacity=0.75,
+        hovertemplate='Week of %{x|%b %d}<br>Avg intake: <b>%{y:.0f}</b> cal<extra></extra>',
+    ), row=1, col=1)
+    fig.add_trace(go.Scatter(
+        x=w.index, y=w['avg_tdee'],
+        name='Avg TDEE', line=dict(color=COLORS['tdee_7d'], width=2.5),
+        hovertemplate='Avg TDEE: <b>%{y:.0f}</b> cal<extra></extra>',
+    ), row=1, col=1)
+
+    # --- Row 2: Actual (bars, green = loss / red = gain) vs expected (dashed line) ---
+    bar_colors = [
+        COLORS['exercise'] if (pd.notna(v) and v <= 0) else COLORS['calories_in']
+        for v in w['weight_change']
+    ]
+    fig.add_trace(go.Bar(
+        x=w.index, y=w['weight_change'],
+        name='Actual Δ Weight', marker_color=bar_colors, opacity=0.75,
+        hovertemplate='Week of %{x|%b %d}<br>Actual: <b>%{y:+.2f}</b> lbs<extra></extra>',
+    ), row=2, col=1)
+    fig.add_trace(go.Scatter(
+        x=w.index, y=w['expected_change'],
+        name='Expected Δ (from deficit)', line=dict(color=COLORS['deficit'], width=2, dash='dash'),
+        hovertemplate='Expected: <b>%{y:+.2f}</b> lbs<extra></extra>',
+    ), row=2, col=1)
+    fig.add_hline(y=0, line=dict(color=COLORS['today_line'], width=1), row=2, col=1)
+
+    # --- Row 3: Summary table ---
+    week_labels = [
+        f"{(d - pd.Timedelta(days=6)).strftime('%b %d')}–{d.strftime('%b %d')}"
+        for d in w.index
+    ]
+
+    def fmt(series, fmt_str, fallback='—'):
+        return [fmt_str.format(v) if pd.notna(v) else fallback for v in series]
+
+    wc_fill = [
+        '#d4edda' if (pd.notna(v) and v <= 0) else ('#f8d7da' if pd.notna(v) else 'white')
+        for v in w['weight_change']
+    ]
+
+    fig.add_trace(go.Table(
+        header=dict(
+            values=['<b>Week</b>', '<b>Weight</b>', '<b>Δ Weight</b>',
+                    '<b>Avg Cal</b>', '<b>Avg TDEE</b>', '<b>Deficit</b>',
+                    '<b>Ex Days</b>', '<b>Logged</b>'],
+            fill_color=COLORS['weight_7d'],
+            font=dict(color='white', size=11),
+            align='center',
+            height=28,
+        ),
+        cells=dict(
+            values=[
+                week_labels,
+                fmt(w['end_weight'],    '{:.1f} lbs'),
+                fmt(w['weight_change'], '{:+.2f} lbs'),
+                fmt(w['avg_calories'],  '{:.0f}'),
+                fmt(w['avg_tdee'],      '{:.0f}'),
+                fmt(w['avg_deficit'],   '{:.0f}'),
+                fmt(w['exercise_days'], '{:.0f}'),
+                [f"{int(v)}/7" if pd.notna(v) else '—' for v in w['logged_days']],
+            ],
+            fill_color=[
+                ['white']  * len(w),
+                ['white']  * len(w),
+                wc_fill,
+                ['white']  * len(w),
+                ['white']  * len(w),
+                ['white']  * len(w),
+                ['white']  * len(w),
+                ['white']  * len(w),
+            ],
+            align=['left', 'center', 'center', 'center', 'center', 'center', 'center', 'center'],
+            font=dict(size=11),
+            height=26,
+        ),
+    ), row=3, col=1)
+
+    # --- Range selector on shared x-axis (affects chart rows 1 & 2) ---
+    fig.update_layout(
+        xaxis=dict(
+            rangeselector=dict(
+                buttons=[
+                    dict(count=28, label='4W',  step='day',   stepmode='backward'),
+                    dict(count=56, label='8W',  step='day',   stepmode='backward'),
+                    dict(count=3,  label='3M',  step='month', stepmode='backward'),
+                    dict(step='all', label='All'),
+                ],
+                activecolor=COLORS['weight_7d'],
+                bgcolor='#f0f0f0',
+            ),
+        ),
+        hovermode=HOVER,
+        template=TEMPLATE,
+        height=950,
+        margin=dict(b=20, t=50),
+        legend=dict(orientation='h', yanchor='bottom', y=1.01, xanchor='center', x=0.5),
+    )
+    fig.update_yaxes(title_text='cal/day',  row=1, col=1)
+    fig.update_yaxes(title_text='lbs/week', row=2, col=1)
+
+    out = CHARTS_DIR / 'chart_weekly_summary.html'
+    fig.write_html(str(out))
+    print(f"Wrote {out.name}")
+    return fig
+
+
+# ---------------------------------------------------------------------------
 
 def main():
     unified, tdee = load_data()
@@ -734,6 +1013,8 @@ def main():
     chart_dow_patterns(unified, tdee)
     chart_projection(unified, tdee)
     chart_calorie_targets(unified, tdee)
+    chart_macros(unified, tdee)
+    chart_weekly_summary(unified, tdee)
     print("\nDone.")
 
 

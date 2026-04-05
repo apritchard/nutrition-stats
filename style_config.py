@@ -56,4 +56,12 @@ COLORS = {
     # Reference lines
     'today_line':         '#aaaaaa',
     'safety_floor':       '#C00000',
+
+    # Macronutrients
+    'macro_protein':      '#9B59B6',
+    'macro_protein_fill': 'rgba(155, 89, 182, 0.4)',
+    'macro_carbs':        '#E67E22',
+    'macro_carbs_fill':   'rgba(230, 126, 34, 0.4)',
+    'macro_fat':          '#16A085',
+    'macro_fat_fill':     'rgba(22, 160, 133, 0.4)',
 }

@@ -258,18 +258,23 @@ def chart_full_dashboard(unified, tdee, output_path=None):
     Assemble all charts into a single HTML page using plotly's to_html().
     output_path overrides the default DATA_DIR/chart_full_dashboard.html.
     """
-    from visualize_extra import chart_tdee_trend, chart_dow_patterns, chart_calorie_targets
+    from visualize_extra import (
+        chart_tdee_trend, chart_dow_patterns, chart_calorie_targets,
+        chart_macros, chart_weekly_summary,
+    )
 
     figs = {
-        'cal_targets': chart_calorie_targets(unified, tdee),
-        'dashboard':   chart_dashboard(unified, tdee),
-        'tdee_trend':  chart_tdee_trend(unified, tdee),
-        'dow':         chart_dow_patterns(unified, tdee),
+        'cal_targets':      chart_calorie_targets(unified, tdee),
+        'dashboard':        chart_dashboard(unified, tdee),
+        'tdee_trend':       chart_tdee_trend(unified, tdee),
+        'dow':              chart_dow_patterns(unified, tdee),
+        'macros':           chart_macros(unified, tdee),
+        'weekly_summary':   chart_weekly_summary(unified, tdee),
     }
 
     _first_chart = [True]  # load plotly.js CDN once via the first chart div
 
-    def to_div(fig, height=None):
+    def to_div(fig, height=None, div_id=None):
         if height:
             fig.update_layout(height=height)
         if _first_chart[0]:
@@ -277,8 +282,16 @@ def chart_full_dashboard(unified, tdee, output_path=None):
             include = 'cdn'   # emits the correct versioned plotly.js CDN script
         else:
             include = False   # plotly.js already loaded; skip redundant tag
-        return fig.to_html(full_html=False, include_plotlyjs=include,
-                           config={'responsive': True})
+        kwargs = {'full_html': False, 'include_plotlyjs': include, 'config': {'responsive': True}}
+        if div_id:
+            kwargs['div_id'] = div_id
+        return fig.to_html(**kwargs)
+
+    date_min = tdee.index.min().strftime('%Y-%m-%d')
+    date_max = tdee.index.max().strftime('%Y-%m-%d')
+
+    # Chart IDs that share a date x-axis and respond to the global date filter
+    LINKED_CHART_IDS = ['chart-dashboard', 'chart-tdee-trend', 'chart-macros', 'chart-weekly']
 
     html = f"""<!DOCTYPE html>
 <html lang="en">
@@ -302,8 +315,49 @@ def chart_full_dashboard(unified, tdee, output_path=None):
     .subtitle {{
       font-size: 0.9em;
       color: #7f8c8d;
-      margin-bottom: 24px;
+      margin-bottom: 16px;
     }}
+    .date-filter {{
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: white;
+      border-radius: 10px;
+      padding: 12px 18px;
+      box-shadow: 0 1px 6px rgba(0,0,0,0.08);
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+    }}
+    .date-filter label {{
+      font-size: 0.85em;
+      font-weight: 600;
+      color: #555;
+      white-space: nowrap;
+    }}
+    .date-filter input[type="date"] {{
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      padding: 5px 10px;
+      font-size: 0.85em;
+      color: #2c3e50;
+    }}
+    .date-filter button {{
+      border: none;
+      border-radius: 6px;
+      padding: 6px 14px;
+      font-size: 0.85em;
+      cursor: pointer;
+      font-weight: 600;
+    }}
+    .btn-apply {{ background: #2E75B6; color: white; }}
+    .btn-apply:hover {{ background: #1F4E79; }}
+    .btn-reset {{ background: #eee; color: #555; }}
+    .btn-reset:hover {{ background: #ddd; }}
+    .date-filter .quick-btns {{ display: flex; gap: 6px; margin-left: 6px; flex-wrap: wrap; }}
+    .date-filter .quick-btns button {{
+      background: #f0f2f5; color: #2c3e50; border: 1px solid #ddd;
+    }}
+    .date-filter .quick-btns button:hover {{ background: #e0e4ea; }}
     .card {{
       background: white;
       border-radius: 10px;
@@ -335,14 +389,28 @@ def chart_full_dashboard(unified, tdee, output_path=None):
   <h1>Health Dashboard</h1>
   <p class="subtitle">Generated {pd.Timestamp.now().strftime('%B %d, %Y')} &mdash; data through {tdee.index.max().strftime('%B %d, %Y')}</p>
 
+  <div class="date-filter">
+    <label>Date range:</label>
+    <input type="date" id="date-start" min="{date_min}" max="{date_max}" value="{date_min}">
+    <span style="color:#999;font-size:0.85em">&rarr;</span>
+    <input type="date" id="date-end"   min="{date_min}" max="{date_max}" value="{date_max}">
+    <button class="btn-apply" onclick="applyDateFilter()">Apply</button>
+    <button class="btn-reset" onclick="resetDateFilter()">Reset</button>
+    <div class="quick-btns">
+      <button onclick="setLast(30)">30d</button>
+      <button onclick="setLast(60)">60d</button>
+      <button onclick="setLast(90)">90d</button>
+    </div>
+  </div>
+
   <div class="card">
     <h2>Daily Overview &mdash; Weight &middot; TDEE &middot; Calories &amp; Exercise</h2>
-    {to_div(figs['dashboard'], height=900)}
+    {to_div(figs['dashboard'], height=900, div_id='chart-dashboard')}
   </div>
 
   <div class="card">
     <h2>TDEE Trend &mdash; Metabolic Adaptation</h2>
-    {to_div(figs['tdee_trend'], height=500)}
+    {to_div(figs['tdee_trend'], height=500, div_id='chart-tdee-trend')}
   </div>
 
   <div class="card">
@@ -355,6 +423,54 @@ def chart_full_dashboard(unified, tdee, output_path=None):
     {to_div(figs['cal_targets'], height=520)}
   </div>
 
+  <div class="card">
+    <h2>Macronutrient Breakdown</h2>
+    {to_div(figs['macros'], height=850, div_id='chart-macros')}
+  </div>
+
+  <div class="card">
+    <h2>Week-by-Week Summary</h2>
+    {to_div(figs['weekly_summary'], height=950, div_id='chart-weekly')}
+  </div>
+
+  <script>
+    var LINKED_CHARTS = {str(LINKED_CHART_IDS)};
+    var DATA_MIN = '{date_min}';
+    var DATA_MAX = '{date_max}';
+
+    function relayoutCharts(start, end) {{
+      LINKED_CHARTS.forEach(function(id) {{
+        var el = document.getElementById(id);
+        if (el) Plotly.relayout(el, {{'xaxis.range': [start, end], 'xaxis.autorange': false}});
+      }});
+    }}
+
+    function applyDateFilter() {{
+      var start = document.getElementById('date-start').value;
+      var end   = document.getElementById('date-end').value;
+      if (!start || !end) return;
+      relayoutCharts(start, end);
+    }}
+
+    function resetDateFilter() {{
+      document.getElementById('date-start').value = DATA_MIN;
+      document.getElementById('date-end').value   = DATA_MAX;
+      LINKED_CHARTS.forEach(function(id) {{
+        var el = document.getElementById(id);
+        if (el) Plotly.relayout(el, {{'xaxis.autorange': true}});
+      }});
+    }}
+
+    function setLast(days) {{
+      var end   = new Date(DATA_MAX);
+      var start = new Date(end);
+      start.setDate(start.getDate() - days + 1);
+      var fmt = function(d) {{ return d.toISOString().slice(0,10); }};
+      document.getElementById('date-start').value = fmt(start);
+      document.getElementById('date-end').value   = fmt(end);
+      relayoutCharts(fmt(start), fmt(end));
+    }}
+  </script>
 </body>
 </html>"""
 
