@@ -29,16 +29,19 @@ PROCESSED_DIR = DATA_DIR / 'data' / 'processed'
 CALS_PER_LB   = 3500
 
 
-def rolling_tdee(df, window_days):
+def rolling_tdee(df, window_days, weight_col='weight_smooth'):
     """
     Compute rolling TDEE using a trailing window.
 
     Returns a Series aligned to df.index. The value on day i represents
     the average daily TDEE over the window ending on day i.
-    Windows with any NaN in Calories or weight_lbs are returned as NaN.
+    Windows with any NaN in Calories or the weight column are returned as NaN.
+
+    weight_col should be a pre-smoothed weight series (default: 'weight_smooth')
+    to prevent noisy endpoint weigh-ins from swinging the TDEE calculation.
     """
     calories = df['Calories'].values
-    weight = df['weight_lbs'].values
+    weight = df[weight_col].values
     n = len(df)
     result = np.full(n, np.nan)
 
@@ -75,6 +78,11 @@ def build_tdee_results():
     # Rolling weight averages (centered for visual accuracy)
     results['weight_7d_avg']  = df['weight_lbs'].rolling(7,  center=True, min_periods=4).mean()
     results['weight_14d_avg'] = df['weight_lbs'].rolling(14, center=True, min_periods=7).mean()
+
+    # Trailing smoothed weight used as TDEE input — prevents noisy endpoint weigh-ins
+    # (post-workout water loss, recovery bounce) from swinging the TDEE calculation.
+    # A single 0.5 lb endpoint error moves 7d TDEE by ~250 cal/day; smoothing removes this.
+    df['weight_smooth'] = df['weight_lbs'].rolling(7, min_periods=4).mean()
 
     # Rolling calorie intake averages
     results['calories_7d_avg']  = df['Calories'].rolling(7,  min_periods=5).mean()

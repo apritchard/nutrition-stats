@@ -129,7 +129,7 @@ def chart_tdee(unified, tdee):
     fig.add_trace(go.Scatter(
         x=tdee.index, y=tdee['calories_7d_avg'],
         mode='lines', name='Avg Calories Eaten (7-day)',
-        line=dict(color=COLORS['calories_avg'], width=1.5, dash='dash'),
+        line=dict(color=COLORS['calories_avg'], width=1.5, dash='dot'),
         hovertemplate='Avg intake: %{y:.0f} cal<extra></extra>',
     ), row=1, col=1)
 
@@ -224,7 +224,7 @@ def chart_dashboard(unified, tdee):
     fig.add_trace(go.Scatter(
         x=tdee.index, y=tdee['calories_7d_avg'],
         mode='lines', name='Avg Intake (7-day)',
-        line=dict(color=COLORS['calories_avg'], width=1.5, dash='dash'),
+        line=dict(color=COLORS['calories_avg'], width=1.5, dash='dot'),
         hovertemplate='Avg intake: %{y:.0f}<extra></extra>',
     ), row=2, col=1)
 

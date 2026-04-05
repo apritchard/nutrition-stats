@@ -8,7 +8,8 @@
       "Bash(mv Measurement-Summary-*.csv data/exports/)",
       "Bash(mv Nutrition-Summary-*.csv data/exports/)",
       "Bash(ls *.csv)",
-      "Bash(ls /c/git/nutrition-stats/*.csv)"
+      "Bash(ls /c/git/nutrition-stats/*.csv)",
+      "Bash(python:*)"
     ]
   }
 }

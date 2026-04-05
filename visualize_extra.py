@@ -502,18 +502,19 @@ def chart_projection(unified, tdee):
 # Chart 4: Recommended calorie targets as TDEE declines
 # ---------------------------------------------------------------------------
 
-def chart_calorie_targets(unified, tdee, goal_weight=175, goal_deficit_at_target=250):
+def chart_calorie_targets(unified, tdee, goal_weight=175, goal_deficit_at_target=250, goal_tdee=2743):
     """
     Simulates weight loss with a weight-keyed tapering deficit and derives the timeline.
 
     Design:
       - Deficit tapers from current level → goal_deficit_at_target as weight → goal_weight.
         This means intake drops gently and non-linearly, never aggressively.
-      - TDEE declines at the exercise-adjusted Theil-Sen rate (conservative, ~68 cal/month).
-        The gross rate would overstate calorie restriction since exercise variation isn't
-        real metabolic adaptation.
+      - TDEE interpolates linearly between current observed TDEE and goal_tdee, keyed to
+        weight progress rather than elapsed time. This anchors the endpoint to a physiological
+        estimate (e.g. Mifflin-St Jeor at goal weight + moderate exercise) rather than
+        extrapolating the historical trend, which overshoots at lower body weights.
       - Timeline is derived from the simulation — not pre-specified.
-      - Recommended intake = projected_TDEE(t) - tapered_deficit(weight_t)
+      - Recommended intake = projected_TDEE(weight) - tapered_deficit(weight)
 
     Two panels:
       1. Calories over time: TDEE, recommended intake, monthly targets
@@ -528,38 +529,28 @@ def chart_calorie_targets(unified, tdee, goal_weight=175, goal_deficit_at_target
     start_weight   = tdee['weight_7d_avg'].dropna().iloc[-1]
     lbs_to_lose    = max(start_weight - goal_weight, 0)
 
-    # --- TDEE baseline and ex-adjusted decline rate ---
-    tdee_hist = tdee['tdee_14d_smoothed'].dropna()
-    x_hist    = np.arange(len(tdee_hist), dtype=float)
-    b0_gross, b1_gross = theil_sen_fit(x_hist, tdee_hist.values)
-
-    tdee_adj_hist = tdee['tdee_adj_14d_smoothed'].dropna()
-    x_adj         = np.arange(len(tdee_adj_hist), dtype=float)
-    _, b1_adj     = theil_sen_fit(x_adj, tdee_adj_hist.values)
-    # Use ex-adjusted rate (less aggressive; exercise changes aren't metabolic adaptation)
-    tdee_decline_per_day = abs(b1_adj) / 1.0   # already per-day from the fit
-
-    # Anchor to actual last measured TDEE, not the regression prediction.
-    # The Theil-Sen line can diverge from recent values when early-period noise
-    # pulls the fit down — using the regression value here would understate the
-    # starting point and compress intake targets unrealistically.
-    start_tdee     = float(tdee_hist.iloc[-1])
-    start_intake   = float(tdee['calories_7d_avg'].dropna().iloc[-1])
-    start_deficit  = start_tdee - start_intake
+    # --- TDEE anchors ---
+    tdee_hist    = tdee['tdee_14d_smoothed'].dropna()
+    start_tdee   = float(tdee_hist.iloc[-1])
+    start_intake = float(tdee['calories_14d_avg'].dropna().iloc[-1])
+    start_deficit = start_tdee - start_intake
 
     # --- Day-by-day simulation ---
+    # tdee(weight)    interpolates linearly from start_tdee → goal_tdee as weight → goal_weight.
+    #                 Anchoring to a physiological target TDEE prevents the trend-line from
+    #                 over-projecting metabolic adaptation at lower body weights.
     # deficit(weight) tapers linearly from start_deficit → goal_deficit_at_target
-    # intake(t)       = tdee(t) - deficit(weight_t)
+    # intake(t)       = tdee(weight) - deficit(weight)
     records = []
-    w    = start_weight
-    t    = start_tdee
+    w = start_weight
 
     for day in range(MAX_SIM_DAYS):
         if w <= goal_weight:
             break
-        frac    = (w - goal_weight) / lbs_to_lose   # 1.0 → 0.0
+        frac    = (w - goal_weight) / lbs_to_lose          # 1.0 at start → 0.0 at goal
+        t       = goal_tdee + (start_tdee - goal_tdee) * frac
         deficit = goal_deficit_at_target + (start_deficit - goal_deficit_at_target) * frac
-        intake  = max(t - deficit, SAFE_FLOOR)       # never below floor
+        intake  = max(t - deficit, SAFE_FLOOR)
 
         records.append({
             'date':    last_date + timedelta(days=day + 1),
@@ -571,7 +562,6 @@ def chart_calorie_targets(unified, tdee, goal_weight=175, goal_deficit_at_target
         })
 
         w -= deficit / CALS_PER_LB
-        t -= tdee_decline_per_day
 
     sim = pd.DataFrame(records).set_index('date')
     goal_date   = sim.index[-1]

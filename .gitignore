@@ -3,3 +3,17 @@ data/processed/
 charts/
 __pycache__/
 *.pyc
+
+# IDE
+.idea/
+
+# Claude Code local settings (CLAUDE.md in root is tracked separately)
+.claude/
+
+# Python virtual environments
+.venv/
+venv/
+env/
+
+# Environment variables
+.env
