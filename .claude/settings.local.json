@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cd:*)",
+      "Bash(mv Exercise-Summary-*.csv Measurement-Summary-*.csv Nutrition-Summary-*.csv Weight-Datapoints.csv data/exports/)",
+      "Bash(mv chart_*.html spurious-health-dashboard.html charts/)",
+      "Bash(mv Exercise-Summary-*.csv data/exports/)",
+      "Bash(mv Measurement-Summary-*.csv data/exports/)",
+      "Bash(mv Nutrition-Summary-*.csv data/exports/)",
+      "Bash(ls *.csv)",
+      "Bash(ls /c/git/nutrition-stats/*.csv)"
+    ]
+  }
+}
