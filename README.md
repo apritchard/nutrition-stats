@@ -70,6 +70,23 @@ python visualize_extra.py # rebuild supplemental charts (requires both processed
 | `chart_projection.html` | Weight goal projection with confidence bands |
 | `chart_calorie_targets.html` | Recommended intake targets toward goal weight |
 
+### Examples
+
+**Daily Dashboard** — weight, TDEE, and calorie/exercise overview
+![Dashboard](docs/screenshots/dashboard.png)
+
+**TDEE Trend** — empirical TDEE over time with Theil-Sen trend lines and Mifflin-St Jeor reference
+![TDEE Trend](docs/screenshots/tdee_trend.png)
+
+**Calorie Targets** — tapering deficit simulation toward goal weight, with toggleable TDEE methods
+![Calorie Targets](docs/screenshots/calorie_targets.png)
+
+**Macronutrient Breakdown** — protein, carbs, and fat over time with macro split %
+![Macros](docs/screenshots/macros.png)
+
+**Week-by-Week Summary** — weekly calories, deficit, weight change, and exercise days
+![Weekly Summary](docs/screenshots/weekly_summary.png)
+
 ## Project structure
 
 ```
