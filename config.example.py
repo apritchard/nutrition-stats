@@ -73,3 +73,7 @@ FAT_TARGET_G     = None   # e.g. 70  — grams of fat per day
 DOB        = None    # e.g. '1990-06-15'
 HEIGHT_CM  = None    # e.g. 177.8 (= 70 inches / 5'10")
 SEX        = None    # 'male' or 'female'
+
+# Activity multiplier for the static MSJ reference line (BMR × multiplier, no exercise data).
+# Common values: 1.2 sedentary, 1.375 light, 1.55 moderate, 1.725 active, 1.9 very active
+MSJ_ACTIVITY_MULTIPLIER = 1.55

@@ -12,7 +12,7 @@ import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from pathlib import Path
-from config import GOAL_WEIGHT
+from config import GOAL_WEIGHT, MSJ_ACTIVITY_MULTIPLIER
 from style_config import COLORS, HOVER, TEMPLATE
 
 DATA_DIR      = Path(__file__).parent
@@ -120,12 +120,19 @@ def chart_tdee(unified, tdee):
 
     # Mifflin-St Jeor formula reference (BMR × 1.2 + 14d exercise avg)
     if 'mst_tdee' in tdee.columns:
-        mst = tdee['mst_tdee'].dropna()
+        mst = tdee['mst_tdee_smoothed'].dropna()
         fig.add_trace(go.Scatter(
             x=mst.index, y=mst.values,
             mode='lines', name='MSJ formula (BMR×1.2 + exercise)',
             line=dict(color=COLORS['mst_tdee'], width=1.5, dash='dot'),
-            hovertemplate='MSJ: %{y:.0f} cal<extra></extra>',
+            hovertemplate='MSJ dynamic: %{y:.0f} cal<extra></extra>',
+        ), row=1, col=1)
+        mst_s = tdee['mst_tdee_static'].dropna()
+        fig.add_trace(go.Scatter(
+            x=mst_s.index, y=mst_s.values,
+            mode='lines', name=f'MSJ formula (BMR×{MSJ_ACTIVITY_MULTIPLIER})',
+            line=dict(color=COLORS['mst_tdee_static'], width=1.5, dash='dot'),
+            hovertemplate='MSJ static: %{y:.0f} cal<extra></extra>',
         ), row=1, col=1)
 
     # --- Calorie intake bars ---
@@ -225,12 +232,19 @@ def chart_dashboard(unified, tdee):
 
     # Mifflin-St Jeor formula reference
     if 'mst_tdee' in tdee.columns:
-        mst = tdee['mst_tdee'].dropna()
+        mst = tdee['mst_tdee_smoothed'].dropna()
         fig.add_trace(go.Scatter(
             x=mst.index, y=mst.values,
             mode='lines', name='MSJ formula (BMR×1.2 + exercise)',
             line=dict(color=COLORS['mst_tdee'], width=1.5, dash='dot'),
-            hovertemplate='MSJ: %{y:.0f}<extra></extra>',
+            hovertemplate='MSJ dynamic: %{y:.0f}<extra></extra>',
+        ), row=2, col=1)
+        mst_s = tdee['mst_tdee_static'].dropna()
+        fig.add_trace(go.Scatter(
+            x=mst_s.index, y=mst_s.values,
+            mode='lines', name=f'MSJ formula (BMR×{MSJ_ACTIVITY_MULTIPLIER})',
+            line=dict(color=COLORS['mst_tdee_static'], width=1.5, dash='dot'),
+            hovertemplate='MSJ static: %{y:.0f}<extra></extra>',
         ), row=2, col=1)
 
     # === Row 3: Calories + Exercise ===

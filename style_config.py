@@ -59,6 +59,7 @@ COLORS = {
 
     # Mifflin-St Jeor formula reference
     'mst_tdee':           '#00ACC1',
+    'mst_tdee_static':    '#0057A8',
 
     # Macronutrients
     'macro_protein':      '#9B59B6',

@@ -16,6 +16,7 @@ from datetime import timedelta
 from config import (
     GOAL_WEIGHT, GOAL_WEIGHT_MILESTONES, GOAL_TDEE, GOAL_DEFICIT_AT_TARGET,
     SAFE_FLOOR, PROJECTION_LOOKBACK_DAYS, PROJECTION_DAYS_FORWARD, CALS_PER_LB,
+    MSJ_ACTIVITY_MULTIPLIER, DOB, HEIGHT_CM, SEX,
 )
 from style_config import COLORS, TEMPLATE, HOVER
 
@@ -161,15 +162,6 @@ def chart_tdee_trend(unified, tdee):
         hovertemplate='%{x|%b %d} adj: %{y:.0f} cal<extra></extra>',
     ))
 
-    # --- OLS trend on raw (the original, outlier-sensitive line) ---
-    ols_y = b0_ols + b1_ols * x_raw
-    fig.add_trace(go.Scatter(
-        x=raw_series.index, y=ols_y,
-        mode='lines', name=f'OLS trend (gross): {fmt_slope(b1_ols)}',
-        line=dict(color=COLORS['ols_trend'], width=1.5, dash='dash'),
-        hovertemplate='OLS: %{y:.0f} cal<extra></extra>',
-    ))
-
     # --- Theil-Sen trend on raw (robust, ignores holiday outliers) ---
     ts_y = b0_ts + b1_ts * x_raw
     fig.add_trace(go.Scatter(
@@ -188,14 +180,21 @@ def chart_tdee_trend(unified, tdee):
         hovertemplate='Adj trend: %{y:.0f} cal<extra></extra>',
     ))
 
-    # --- Mifflin-St Jeor formula reference line ---
+    # --- Mifflin-St Jeor formula reference lines ---
     if 'mst_tdee' in tdee.columns:
-        mst = tdee['mst_tdee'].reindex(raw_series.index)
+        mst = tdee['mst_tdee_smoothed'].reindex(raw_series.index)
         fig.add_trace(go.Scatter(
             x=mst.index, y=mst.values,
             mode='lines', name='MSJ formula (BMR×1.2 + exercise)',
             line=dict(color=COLORS['mst_tdee'], width=2, dash='dot'),
-            hovertemplate='%{x|%b %d} MSJ: %{y:.0f} cal<extra></extra>',
+            hovertemplate='%{x|%b %d} MSJ dynamic: %{y:.0f} cal<extra></extra>',
+        ))
+        mst_s = tdee['mst_tdee_static'].reindex(raw_series.index)
+        fig.add_trace(go.Scatter(
+            x=mst_s.index, y=mst_s.values,
+            mode='lines', name=f'MSJ formula (BMR×{MSJ_ACTIVITY_MULTIPLIER})',
+            line=dict(color=COLORS['mst_tdee_static'], width=2, dash='dot'),
+            hovertemplate='%{x|%b %d} MSJ static: %{y:.0f} cal<extra></extra>',
         ))
 
     # --- Summary annotation ---
@@ -207,7 +206,6 @@ def chart_tdee_trend(unified, tdee):
         xanchor='right',
         text=(
             f"<b>Trend comparison (start to end)</b><br>"
-            f"OLS gross:        {ols_diff:+.0f} cal total ({b1_ols*30:+.0f}/month)<br>"
             f"Theil-Sen gross:  {ts_diff:+.0f} cal total ({b1_ts*30:+.0f}/month)<br>"
             f"Theil-Sen ex-adj: {adj_diff:+.0f} cal total ({b1_adj*30:+.0f}/month)"
         ),
@@ -232,7 +230,6 @@ def chart_tdee_trend(unified, tdee):
     fig.write_html(str(out))
     print(
         f"Wrote {out.name}\n"
-        f"  OLS gross:        {fmt_slope(b1_ols)} ({b1_ols*7:+.1f} cal/week)\n"
         f"  Theil-Sen gross:  {fmt_slope(b1_ts)}  ({b1_ts*7:+.1f} cal/week)\n"
         f"  Theil-Sen ex-adj: {fmt_slope(b1_adj)} ({b1_adj*7:+.1f} cal/week)"
     )
@@ -511,71 +508,76 @@ def chart_calorie_targets(unified, tdee, goal_weight=GOAL_WEIGHT, goal_deficit_a
     """
     Simulates weight loss with a weight-keyed tapering deficit and derives the timeline.
 
-    Design:
-      - Deficit tapers from current level → goal_deficit_at_target as weight → goal_weight.
-        This means intake drops gently and non-linearly, never aggressively.
-      - TDEE interpolates linearly between current observed TDEE and goal_tdee, keyed to
-        weight progress rather than elapsed time. This anchors the endpoint to a physiological
-        estimate (e.g. Mifflin-St Jeor at goal weight + moderate exercise) rather than
-        extrapolating the historical trend, which overshoots at lower body weights.
-      - Timeline is derived from the simulation — not pre-specified.
-      - Recommended intake = projected_TDEE(weight) - tapered_deficit(weight)
+    Supports three TDEE source modes, selectable via buttons at the top of the chart:
+      1. Projected TDEE  — interpolates from observed 14d TDEE to goal_tdee (config)
+      2. MSJ dynamic     — BMR×1.2 + 14d exercise avg (dynamic formula)
+      3. MSJ static      — BMR × MSJ_ACTIVITY_MULTIPLIER (pure formula, no exercise data)
 
     Two panels:
       1. Calories over time: TDEE, recommended intake, monthly targets
       2. Simulated weight progress toward goal
     """
     HIST_CONTEXT = 60
-    MAX_SIM_DAYS = 730   # safety cap on simulation (2 years)
+    MAX_SIM_DAYS = 730
 
-    last_date      = tdee.index.max()
-    start_weight   = tdee['weight_7d_avg'].dropna().iloc[-1]
-    lbs_to_lose    = max(start_weight - goal_weight, 0)
-
-    # --- TDEE anchors ---
-    tdee_hist    = tdee['tdee_14d_smoothed'].dropna()
-    start_tdee   = float(tdee_hist.iloc[-1])
+    last_date    = tdee.index.max()
+    start_weight = tdee['weight_7d_avg'].dropna().iloc[-1]
+    lbs_to_lose  = max(start_weight - goal_weight, 0)
     start_intake = float(tdee['calories_14d_avg'].dropna().iloc[-1])
-    start_deficit = start_tdee - start_intake
 
-    # --- Day-by-day simulation ---
-    # tdee(weight)    interpolates linearly from start_tdee → goal_tdee as weight → goal_weight.
-    #                 Anchoring to a physiological target TDEE prevents the trend-line from
-    #                 over-projecting metabolic adaptation at lower body weights.
-    # deficit(weight) tapers linearly from start_deficit → goal_deficit_at_target
-    # intake(t)       = tdee(weight) - deficit(weight)
-    records = []
-    w = start_weight
+    if lbs_to_lose <= 0:
+        return go.Figure()
 
-    for day in range(MAX_SIM_DAYS):
-        if w <= goal_weight:
-            break
-        frac    = (w - goal_weight) / lbs_to_lose          # 1.0 at start → 0.0 at goal
-        t       = goal_tdee + (start_tdee - goal_tdee) * frac
-        deficit = goal_deficit_at_target + (start_deficit - goal_deficit_at_target) * frac
-        intake  = max(t - deficit, SAFE_FLOOR)
+    # --- Simulation helper ---
+    def run_sim(start_tdee, goal_tdee_val):
+        start_deficit = start_tdee - start_intake
+        records, w = [], start_weight
+        for day in range(MAX_SIM_DAYS):
+            if w <= goal_weight:
+                break
+            frac    = (w - goal_weight) / lbs_to_lose
+            t       = goal_tdee_val + (start_tdee - goal_tdee_val) * frac
+            deficit = goal_deficit_at_target + (start_deficit - goal_deficit_at_target) * frac
+            intake  = max(t - deficit, SAFE_FLOOR)
+            records.append({
+                'date':          last_date + timedelta(days=day + 1),
+                'weight':        w,
+                'tdee':          t,
+                'deficit':       deficit,
+                'intake':        intake,
+                'rate_lbs_week': deficit * 7 / CALS_PER_LB,
+            })
+            w -= deficit / CALS_PER_LB
+        sim = pd.DataFrame(records).set_index('date')
+        return sim, start_tdee, start_deficit
 
-        records.append({
-            'date':    last_date + timedelta(days=day + 1),
-            'weight':  w,
-            'tdee':    t,
-            'deficit': deficit,
-            'intake':  intake,
-            'rate_lbs_week': deficit * 7 / CALS_PER_LB,
-        })
+    # --- Build mode list: (label, start_tdee, goal_tdee_val) ---
+    start_tdee_proj = float(tdee['tdee_14d_smoothed'].dropna().iloc[-1])
+    modes = [('Projected TDEE', start_tdee_proj, goal_tdee)]
 
-        w -= deficit / CALS_PER_LB
+    mst_cols = ['mst_tdee_smoothed', 'mst_tdee_static']
+    if all(c in tdee.columns for c in mst_cols) and all(v is not None for v in [DOB, HEIGHT_CM, SEX]):
+        dob_ts      = pd.Timestamp(DOB)
+        current_age = int((last_date - dob_ts).days / 365.25)
+        offset      = 5 if SEX == 'male' else -161
+        goal_bmr    = 10 * (goal_weight / 2.20462) + 6.25 * HEIGHT_CM - 5 * current_age + offset
+        ex_avg      = float(tdee['exercise_14d_avg'].dropna().iloc[-1])
 
-    sim = pd.DataFrame(records).set_index('date')
-    goal_date   = sim.index[-1]
-    total_weeks = len(sim) / 7
+        modes.append(('MSJ (BMR×1.2 + exercise)',
+                      float(tdee['mst_tdee_smoothed'].dropna().iloc[-1]),
+                      goal_bmr * 1.2 + ex_avg))
+        modes.append((f'MSJ (BMR×{MSJ_ACTIVITY_MULTIPLIER})',
+                      float(tdee['mst_tdee_static'].dropna().iloc[-1]),
+                      goal_bmr * MSJ_ACTIVITY_MULTIPLIER))
 
-    # Monthly reference rows for intake labels
-    monthly = sim['intake'].resample('MS').mean()
+    # Run all simulations → list of (label, sim_df, start_tdee, start_deficit)
+    sim_results = [(label, *run_sim(st, gt)) for label, st, gt in modes]
 
-    # --- Historical context ---
-    hist_tdee   = tdee_hist.tail(HIST_CONTEXT)
+    # --- Historical context (fixed across modes) ---
+    hist_tdee   = tdee['tdee_14d_smoothed'].dropna().tail(HIST_CONTEXT)
     hist_intake = tdee['calories_7d_avg'].dropna().tail(HIST_CONTEXT)
+    hist_weight = tdee['weight_7d_avg'].dropna().tail(HIST_CONTEXT)
+    max_goal_date = max(r[1].index[-1] for r in sim_results)
 
     # -----------------------------------------------------------------------
     fig = make_subplots(
@@ -586,18 +588,10 @@ def chart_calorie_targets(unified, tdee, goal_weight=GOAL_WEIGHT, goal_deficit_a
         row_heights=[0.58, 0.42],
     )
 
-    # --- Row 1: calories ---
+    N_FIXED    = 3   # historical traces, always visible
+    N_PER_MODE = 5   # traces per simulation mode
 
-    # Shade deficit zone (between TDEE and intake)
-    fig.add_trace(go.Scatter(
-        x=pd.concat([pd.Series(sim.index), pd.Series(sim.index[::-1])]),
-        y=np.concatenate([sim['tdee'].values, sim['intake'].values[::-1]]),
-        fill='toself', fillcolor='rgba(39,174,96,0.08)',
-        line=dict(color='rgba(0,0,0,0)'),
-        name='Deficit zone', hoverinfo='skip', showlegend=True,
-    ), row=1, col=1)
-
-    # Historical TDEE
+    # --- Fixed traces (indices 0-2) ---
     fig.add_trace(go.Scatter(
         x=hist_tdee.index, y=hist_tdee.values,
         mode='lines', name='TDEE (historical)',
@@ -605,7 +599,6 @@ def chart_calorie_targets(unified, tdee, goal_weight=GOAL_WEIGHT, goal_deficit_a
         hovertemplate='%{x|%b %d} TDEE: %{y:.0f}<extra></extra>',
     ), row=1, col=1)
 
-    # Historical intake
     fig.add_trace(go.Scatter(
         x=hist_intake.index, y=hist_intake.values,
         mode='lines', name='Actual intake (14d avg)',
@@ -613,59 +606,6 @@ def chart_calorie_targets(unified, tdee, goal_weight=GOAL_WEIGHT, goal_deficit_a
         hovertemplate='%{x|%b %d} intake: %{y:.0f}<extra></extra>',
     ), row=1, col=1)
 
-    # Projected TDEE
-    fig.add_trace(go.Scatter(
-        x=sim.index, y=sim['tdee'],
-        mode='lines', name='Projected TDEE (ex-adj decline)',
-        line=dict(color=COLORS['tdee_7d'], width=2, dash='dash'),
-        hovertemplate='%{x|%b %d} proj TDEE: %{y:.0f}<extra></extra>',
-    ), row=1, col=1)
-
-    # Recommended intake
-    fig.add_trace(go.Scatter(
-        x=sim.index, y=sim['intake'],
-        mode='lines', name='Recommended intake (tapering deficit)',
-        line=dict(color=COLORS['intake_rec'], width=2.5),
-        hovertemplate='%{x|%b %d} target: %{y:.0f} cal (%{customdata:.1f} lbs/wk deficit)<extra></extra>',
-        customdata=sim['rate_lbs_week'],
-    ), row=1, col=1)
-
-    # Monthly intake labels
-    for month_start, intake_val in monthly.items():
-        if pd.isna(intake_val):
-            continue
-        fig.add_annotation(
-            x=month_start, y=intake_val, row=1, col=1,
-            text=f"<b>{intake_val:.0f}</b>",
-            showarrow=True, arrowhead=2, arrowsize=0.8,
-            arrowcolor=COLORS['goal_label'], ax=0, ay=-30,
-            font=dict(size=10, color=COLORS['goal_label']),
-            bgcolor='white', bordercolor=COLORS['goal_line'], borderwidth=1,
-        )
-
-    # Safety floor
-    fig.add_shape(type='line', xref='x', yref='y',
-        x0=sim.index[0], x1=sim.index[-1], y0=SAFE_FLOOR, y1=SAFE_FLOOR,
-        line=dict(color=COLORS['safety_floor'], width=1, dash='dot'), row=1, col=1,
-    )
-
-    # Today line (row 1 + row 2)
-    for row in [1, 2]:
-        fig.add_shape(type='line', xref='x', yref='paper',
-            x0=last_date, x1=last_date,
-            y0=(0.42 if row == 1 else 0), y1=(1.0 if row == 1 else 0.38),
-            line=dict(color=COLORS['today_line'], width=1, dash='dot'),
-        )
-    fig.add_annotation(
-        x=last_date, y=1.01, xref='x', yref='paper',
-        text='Today', showarrow=False,
-        font=dict(size=10, color='#888'), xanchor='left',
-    )
-
-    # --- Row 2: weight ---
-
-    # Historical weight (7d avg)
-    hist_weight = tdee['weight_7d_avg'].dropna().tail(HIST_CONTEXT)
     fig.add_trace(go.Scatter(
         x=hist_weight.index, y=hist_weight.values,
         mode='lines', name='Weight (7d avg, historical)',
@@ -673,67 +613,175 @@ def chart_calorie_targets(unified, tdee, goal_weight=GOAL_WEIGHT, goal_deficit_a
         hovertemplate='%{x|%b %d}: %{y:.1f} lbs<extra></extra>',
     ), row=2, col=1)
 
-    # Simulated weight
-    fig.add_trace(go.Scatter(
-        x=sim.index, y=sim['weight'],
-        mode='lines', name='Simulated weight',
-        line=dict(color=COLORS['weight_7d'], width=2, dash='dash'),
-        hovertemplate='%{x|%b %d} sim: %{y:.1f} lbs<extra></extra>',
-    ), row=2, col=1)
+    # --- Mode-specific traces (5 per mode, indices 3 onward) ---
+    for mode_idx, (label, sim, start_tdee_val, start_deficit_val) in enumerate(sim_results):
+        visible = (mode_idx == 0)
+        monthly = sim['intake'].resample('MS').mean().dropna()
 
-    # Goal weight line
-    fig.add_shape(type='line', xref='x', yref='y',
-        x0=hist_weight.index[0], x1=goal_date, y0=goal_weight, y1=goal_weight,
-        line=dict(color=COLORS['goal_line'], width=1.5, dash='dot'), row=2, col=1,
-    )
-    fig.add_annotation(
-        x=goal_date, y=goal_weight, row=2, col=1,
-        text=f'  {goal_weight} lbs  {goal_date.strftime("%b %Y")}',
-        showarrow=False, font=dict(size=11, color=COLORS['goal_line']),
-        xanchor='left',
+        # Deficit zone fill
+        fig.add_trace(go.Scatter(
+            x=pd.concat([pd.Series(sim.index), pd.Series(sim.index[::-1])]),
+            y=np.concatenate([sim['tdee'].values, sim['intake'].values[::-1]]),
+            fill='toself', fillcolor='rgba(39,174,96,0.08)',
+            line=dict(color='rgba(0,0,0,0)'),
+            name='Deficit zone', hoverinfo='skip',
+            showlegend=(mode_idx == 0), visible=visible,
+        ), row=1, col=1)
+
+        # Projected TDEE line
+        fig.add_trace(go.Scatter(
+            x=sim.index, y=sim['tdee'],
+            mode='lines', name='Projected TDEE',
+            line=dict(color=COLORS['tdee_7d'], width=2, dash='dash'),
+            hovertemplate='%{x|%b %d} proj TDEE: %{y:.0f}<extra></extra>',
+            showlegend=(mode_idx == 0), visible=visible,
+        ), row=1, col=1)
+
+        # Recommended intake line
+        fig.add_trace(go.Scatter(
+            x=sim.index, y=sim['intake'],
+            mode='lines', name='Recommended intake (tapering deficit)',
+            line=dict(color=COLORS['intake_rec'], width=2.5),
+            hovertemplate='%{x|%b %d} target: %{y:.0f} cal (%{customdata:.1f} lbs/wk)<extra></extra>',
+            customdata=sim['rate_lbs_week'],
+            showlegend=(mode_idx == 0), visible=visible,
+        ), row=1, col=1)
+
+        # Monthly intake labels as a text trace (toggleable)
+        fig.add_trace(go.Scatter(
+            x=monthly.index, y=monthly.values,
+            mode='text+markers',
+            text=[f'<b>{v:.0f}</b>' for v in monthly.values],
+            textposition='top center',
+            textfont=dict(size=10, color=COLORS['goal_label']),
+            marker=dict(color=COLORS['goal_line'], size=5),
+            name='Monthly targets', showlegend=False, visible=visible,
+            hovertemplate='%{x|%b %Y} avg target: %{y:.0f}<extra></extra>',
+        ), row=1, col=1)
+
+        # Simulated weight
+        fig.add_trace(go.Scatter(
+            x=sim.index, y=sim['weight'],
+            mode='lines', name='Simulated weight',
+            line=dict(color=COLORS['weight_7d'], width=2, dash='dash'),
+            hovertemplate='%{x|%b %d} sim: %{y:.1f} lbs<extra></extra>',
+            showlegend=(mode_idx == 0), visible=visible,
+        ), row=2, col=1)
+
+    # --- Shapes (static) ---
+    # Use add_hline (xref='paper' internally) so these never push the x-axis range out.
+    fig.add_hline(y=SAFE_FLOOR,   line=dict(color=COLORS['safety_floor'], width=1,   dash='dot'), row=1, col=1)
+    fig.add_hline(y=goal_weight,  line=dict(color=COLORS['goal_line'],    width=1.5, dash='dot'), row=2, col=1)
+    for row in [1, 2]:
+        fig.add_shape(type='line', xref='x', yref='paper',
+            x0=last_date, x1=last_date,
+            y0=(0.42 if row == 1 else 0), y1=(1.0 if row == 1 else 0.38),
+            line=dict(color=COLORS['today_line'], width=1, dash='dot'),
+        )
+
+    # --- Annotation builder (swapped per mode via updatemenus) ---
+    today_ann = dict(
+        x=last_date, y=1.01, xref='x', yref='paper',
+        text='Today', showarrow=False,
+        font=dict(size=10, color='#888'), xanchor='left',
     )
 
-    # Summary box
-    end_tdee   = sim['tdee'].iloc[-1]
-    end_intake = sim['intake'].iloc[-1]
-    fig.add_annotation(
-        x=0.01, y=0.50, xref='paper', yref='paper',
-        align='left', valign='middle',
-        text=(
-            f"<b>Plan Summary</b><br>"
-            f"Start intake:  {start_intake:.0f} cal \u2192 Goal intake: {end_intake:.0f} cal<br>"
-            f"Start deficit: {start_deficit:.0f} cal/day \u2192 {goal_deficit_at_target} cal/day at goal<br>"
-            f"TDEE at goal:  ~{end_tdee:.0f} cal/day<br>"
-            f"Timeline:      {total_weeks:.0f} weeks ({total_weeks/4.33:.1f} months)"
-        ),
-        showarrow=False,
-        bgcolor='white', bordercolor='#ccc', borderwidth=1,
-        font=dict(size=11),
-    )
+    def build_annotations(label, sim, start_tdee_val, start_deficit_val):
+        goal_date   = sim.index[-1]
+        total_weeks = len(sim) / 7
+        end_tdee    = sim['tdee'].iloc[-1]
+        end_intake  = sim['intake'].iloc[-1]
+        return [
+            today_ann,
+            dict(
+                x=0.01, y=0.50, xref='paper', yref='paper',
+                align='left', valign='middle',
+                text=(
+                    f"<b>Plan Summary ({label})</b><br>"
+                    f"Start TDEE:    {start_tdee_val:.0f} cal/day<br>"
+                    f"Start intake:  {start_intake:.0f} cal \u2192 {end_intake:.0f} cal at goal<br>"
+                    f"Start deficit: {start_deficit_val:.0f} \u2192 {goal_deficit_at_target} cal/day at goal<br>"
+                    f"TDEE at goal:  ~{end_tdee:.0f} cal/day<br>"
+                    f"Timeline:      {total_weeks:.0f} weeks ({total_weeks/4.33:.1f} months)"
+                ),
+                showarrow=False,
+                bgcolor='white', bordercolor='#ccc', borderwidth=1,
+                font=dict(size=11),
+            ),
+            dict(
+                x=goal_date, y=goal_weight, xref='x', yref='y2',
+                text=f'{goal_weight} lbs<br>{goal_date.strftime("%b %Y")}',
+                showarrow=False, font=dict(size=11, color=COLORS['goal_line']),
+                xanchor='center', yanchor='bottom', yshift=6,
+            ),
+        ]
+
+    # Set initial annotations (mode 0)
+    init_label, init_sim, init_st, init_sd = sim_results[0]
+    for ann in build_annotations(init_label, init_sim, init_st, init_sd):
+        fig.add_annotation(**ann)
+
+    # --- Updatemenus toggle (only when MSJ data available) ---
+    if len(sim_results) > 1:
+        n_modes = len(sim_results)
+
+        def vis_array(active_idx):
+            v = [True] * N_FIXED
+            for m in range(n_modes):
+                v.extend([m == active_idx] * N_PER_MODE)
+            return v
+
+        x_start = hist_tdee.index[0]
+        buttons = []
+        for mode_idx, (label, sim, st, sd) in enumerate(sim_results):
+            buttons.append(dict(
+                label=label,
+                method='update',
+                args=[
+                    {'visible': vis_array(mode_idx)},
+                    {
+                        'annotations':    build_annotations(label, sim, st, sd),
+                        'xaxis.range':    [x_start, sim.index[-1]],
+                        'xaxis.autorange': False,
+                    },
+                ],
+            ))
+
+        fig.update_layout(updatemenus=[dict(
+            type='buttons', direction='right',
+            x=0.5, xanchor='center', y=1.13, yanchor='top',
+            buttons=buttons, showactive=True,
+            bgcolor='#f0f2f5', bordercolor='#ddd',
+            font=dict(size=12),
+        )])
 
     fig.update_layout(
         title=f'<b>Calorie Targets to Reach {goal_weight} lbs</b> — Tapering Deficit, TDEE-Adjusted',
         hovermode=HOVER,
         template=TEMPLATE,
-        height=650,
-        margin=dict(b=130),
-        legend=dict(orientation='h', yanchor='top', y=-0.12, xanchor='center', x=0.5),
+        height=700,
+        margin=dict(b=130, t=100),
+        legend=dict(orientation='h', yanchor='top', y=-0.10, xanchor='center', x=0.5),
+        xaxis=dict(range=[hist_tdee.index[0], sim_results[0][1].index[-1]], autorange=False),
     )
     fig.update_yaxes(title_text='cal/day', row=1, col=1)
-    fig.update_yaxes(title_text='lbs', row=2, col=1)
-    fig.update_xaxes(title_text='Date', row=2, col=1)
+    fig.update_yaxes(title_text='lbs',     row=2, col=1)
+    fig.update_xaxes(title_text='Date',    row=2, col=1)
 
     out = CHARTS_DIR / 'chart_calorie_targets.html'
     fig.write_html(str(out))
-    fig_to_return = fig
 
+    # Print summary for default (projected TDEE) mode
+    label0, sim0, st0, sd0 = sim_results[0]
+    goal_date0   = sim0.index[-1]
+    total_weeks0 = len(sim0) / 7
     print(f"Wrote {out.name}")
-    print(f"  Start intake:   {start_intake:.0f} cal/day  (deficit: {start_deficit:.0f})")
-    print(f"  End intake:     {end_intake:.0f} cal/day  (deficit: {goal_deficit_at_target})")
-    print(f"  TDEE at goal:   {end_tdee:.0f} cal/day")
-    print(f"  Timeline:       {total_weeks:.0f} weeks  ({total_weeks/4.33:.1f} months)")
-    print(f"  Goal date:      {goal_date.strftime('%B %d, %Y')}")
-    return fig_to_return
+    print(f"  Start intake:   {start_intake:.0f} cal/day  (deficit: {sd0:.0f})")
+    print(f"  End intake:     {sim0['intake'].iloc[-1]:.0f} cal/day  (deficit: {goal_deficit_at_target})")
+    print(f"  TDEE at goal:   {sim0['tdee'].iloc[-1]:.0f} cal/day")
+    print(f"  Timeline:       {total_weeks0:.0f} weeks  ({total_weeks0/4.33:.1f} months)")
+    print(f"  Goal date:      {goal_date0.strftime('%B %d, %Y')}")
+    return fig
 
 
 # ---------------------------------------------------------------------------

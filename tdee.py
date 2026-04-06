@@ -23,7 +23,7 @@ TDEE Method (energy balance):
 import pandas as pd
 import numpy as np
 from pathlib import Path
-from config import CALS_PER_LB, LOW_ACTIVITY_THRESHOLD, DOB, HEIGHT_CM, SEX
+from config import CALS_PER_LB, LOW_ACTIVITY_THRESHOLD, DOB, HEIGHT_CM, SEX, MSJ_ACTIVITY_MULTIPLIER
 
 DATA_DIR      = Path(__file__).parent
 PROCESSED_DIR = DATA_DIR / 'data' / 'processed'
@@ -136,7 +136,9 @@ def build_tdee_results():
         wt_kg   = df['weight_smooth'] / 2.20462
         offset  = 5 if SEX == 'male' else -161
         mst_bmr = 10 * wt_kg + 6.25 * HEIGHT_CM - 5 * ages + offset
-        results['mst_tdee'] = mst_bmr * 1.2 + results['exercise_14d_avg']
+        results['mst_tdee']          = mst_bmr * 1.2 + results['exercise_14d_avg']
+        results['mst_tdee_smoothed'] = results['mst_tdee'].rolling(7, min_periods=4).mean()
+        results['mst_tdee_static']   = mst_bmr * MSJ_ACTIVITY_MULTIPLIER
 
     results.to_csv(PROCESSED_DIR / 'tdee_results.csv')
     print("tdee_results.csv written")
