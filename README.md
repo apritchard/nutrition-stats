@@ -1,6 +1,8 @@
 # nutrition-stats
 
-Interactive charts for personal health data — weight, nutrition, TDEE, and exercise — exported from MyFitnessPal.
+Interactive charts for personal health data — weight, nutrition, TDEE, and exercise — exported from MyFitnessPal. The primary purpose is to derive your effective TDEE based off your observed nutrition, activity level, and weight loss. 
+
+This project assumes you track weight, calories, and exercise in MFP (either manually or by importing from other services). You can also provide a manual set of weight datapoints if you have not added that in MFP. 
 
 ## Setup
 
