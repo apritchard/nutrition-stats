@@ -16,7 +16,7 @@ from datetime import timedelta
 from config import (
     GOAL_WEIGHT, GOAL_WEIGHT_MILESTONES, GOAL_TDEE, GOAL_DEFICIT_AT_TARGET,
     SAFE_FLOOR, PROJECTION_LOOKBACK_DAYS, PROJECTION_DAYS_FORWARD, CALS_PER_LB,
-    MSJ_ACTIVITY_MULTIPLIER, DOB, HEIGHT_CM, SEX,
+    MSJ_ACTIVITY_MULTIPLIER, DOB, HEIGHT_CM, SEX, START_DEFICIT,
 )
 from style_config import COLORS, TEMPLATE, HOVER
 
@@ -67,22 +67,6 @@ def theil_sen_fit(x, y):
     return b0, b1
 
 
-def find_low_activity_spans(low_activity_series):
-    """Return list of (start_date, end_date) for contiguous low-activity runs."""
-    spans = []
-    in_span = False
-    start = None
-    for date, val in low_activity_series.items():
-        if val and not in_span:
-            in_span = True
-            start = date
-        elif not val and in_span:
-            spans.append((start, date))
-            in_span = False
-    if in_span:
-        spans.append((start, low_activity_series.index[-1]))
-    return spans
-
 
 def prediction_interval(x_future, b0, b1, s, Sxx, x_mean, n, z=1.96):
     """95% prediction interval at each point in x_future."""
@@ -96,36 +80,17 @@ def prediction_interval(x_future, b0, b1, s, Sxx, x_mean, n, z=1.96):
 # ---------------------------------------------------------------------------
 
 def chart_tdee_trend(unified, tdee):
-    """
-    TDEE trend chart with three improvements over the original:
-
-    1. Exercise-adjusted TDEE series (raw TDEE minus rolling exercise avg) isolates
-       baseline metabolic rate from fluctuating activity levels.
-    2. Theil-Sen robust trend line alongside OLS — Theil-Sen automatically ignores
-       outlier periods (e.g. holiday exercise breaks) by using the median slope.
-    3. Low-activity periods are shaded so it's visually clear where exercise dipped
-       and why the raw TDEE trend was pulled down.
-    """
+    """TDEE trend with Theil-Sen robust trend line alongside OLS."""
     raw_series = tdee['tdee_30d_avg'].dropna()
-    adj_series = tdee['tdee_adj_30d_avg'].dropna()
 
     if len(raw_series) < 10:
         print("Not enough TDEE data for trend chart.")
         return
 
-    # Fit both OLS and Theil-Sen to the RAW series
     x_raw = np.arange(len(raw_series))
     y_raw = raw_series.values
     b0_ols, b1_ols, s_ols, Sxx, x_mean = ols_fit(x_raw, y_raw)
     b0_ts,  b1_ts                       = theil_sen_fit(x_raw, y_raw)
-
-    # Fit Theil-Sen to the ADJUSTED series (exercise removed)
-    # Align to same index as raw for comparability
-    adj_aligned = adj_series.reindex(raw_series.index)
-    valid_adj   = adj_aligned.dropna()
-    x_adj = np.array([raw_series.index.get_loc(d) for d in valid_adj.index], dtype=float)
-    y_adj = valid_adj.values
-    b0_adj, b1_adj = theil_sen_fit(x_adj, y_adj)
 
     def fmt_slope(b1):
         monthly = b1 * 30
@@ -134,61 +99,25 @@ def chart_tdee_trend(unified, tdee):
 
     fig = go.Figure()
 
-    # --- Shade low-activity periods ---
-    low_act_spans = find_low_activity_spans(tdee['low_activity'].fillna(False))
-    for i, (start, end) in enumerate(low_act_spans):
-        fig.add_vrect(
-            x0=start, x1=end,
-            fillcolor=COLORS['low_activity_fill'],
-            line_width=0,
-            annotation_text='Low activity' if i == 0 else '',
-            annotation_position='top left',
-            annotation_font=dict(size=10, color=COLORS['low_activity_text']),
-        )
-
     # --- Raw TDEE ---
     fig.add_trace(go.Scatter(
         x=raw_series.index, y=raw_series.values,
-        mode='lines', name='TDEE gross (14d smoothed)',
+        mode='lines', name='TDEE (30d avg)',
         line=dict(color=COLORS['tdee_7d'], width=2),
-        hovertemplate='%{x|%b %d} gross: %{y:.0f} cal<extra></extra>',
+        hovertemplate='%{x|%b %d}: %{y:.0f} cal<extra></extra>',
     ))
 
-    # --- Exercise-adjusted TDEE ---
-    fig.add_trace(go.Scatter(
-        x=adj_series.index, y=adj_series.values,
-        mode='lines', name='TDEE ex-adjusted (14d smoothed)',
-        line=dict(color=COLORS['weight_raw'], width=2),
-        hovertemplate='%{x|%b %d} adj: %{y:.0f} cal<extra></extra>',
-    ))
-
-    # --- Theil-Sen trend on raw (robust, ignores holiday outliers) ---
+    # --- Theil-Sen trend (robust to outliers) ---
     ts_y = b0_ts + b1_ts * x_raw
     fig.add_trace(go.Scatter(
         x=raw_series.index, y=ts_y,
-        mode='lines', name=f'Theil-Sen trend (gross): {fmt_slope(b1_ts)}',
+        mode='lines', name=f'Theil-Sen trend: {fmt_slope(b1_ts)}',
         line=dict(color=COLORS['ts_trend'], width=2.5, dash='longdash'),
         hovertemplate='Theil-Sen: %{y:.0f} cal<extra></extra>',
     ))
 
-    # --- Theil-Sen trend on exercise-adjusted ---
-    adj_trend_y = b0_adj + b1_adj * x_raw
-    fig.add_trace(go.Scatter(
-        x=raw_series.index, y=adj_trend_y,
-        mode='lines', name=f'Theil-Sen trend (ex-adj): {fmt_slope(b1_adj)}',
-        line=dict(color=COLORS['ts_adj_trend'], width=2.5, dash='longdash'),
-        hovertemplate='Adj trend: %{y:.0f} cal<extra></extra>',
-    ))
-
-    # --- Mifflin-St Jeor formula reference lines ---
-    if 'mst_tdee' in tdee.columns:
-        mst = tdee['mst_tdee_smoothed'].reindex(raw_series.index)
-        fig.add_trace(go.Scatter(
-            x=mst.index, y=mst.values,
-            mode='lines', name='MSJ formula (BMR×1.2 + exercise)',
-            line=dict(color=COLORS['mst_tdee'], width=2, dash='dot'),
-            hovertemplate='%{x|%b %d} MSJ dynamic: %{y:.0f} cal<extra></extra>',
-        ))
+    # --- Mifflin-St Jeor formula reference line ---
+    if 'mst_tdee_static' in tdee.columns:
         mst_s = tdee['mst_tdee_static'].reindex(raw_series.index)
         fig.add_trace(go.Scatter(
             x=mst_s.index, y=mst_s.values,
@@ -198,16 +127,13 @@ def chart_tdee_trend(unified, tdee):
         ))
 
     # --- Summary annotation ---
-    ols_diff  = (b0_ols + b1_ols * x_raw[-1]) - (b0_ols + b1_ols * x_raw[0])
-    ts_diff   = (b0_ts  + b1_ts  * x_raw[-1]) - (b0_ts  + b1_ts  * x_raw[0])
-    adj_diff  = (b0_adj + b1_adj * x_raw[-1]) - (b0_adj + b1_adj * x_raw[0])
+    ts_diff = (b0_ts + b1_ts * x_raw[-1]) - (b0_ts + b1_ts * x_raw[0])
     fig.add_annotation(
         x=0.99, y=0.97, xref='paper', yref='paper', align='left',
         xanchor='right',
         text=(
-            f"<b>Trend comparison (start to end)</b><br>"
-            f"Theil-Sen gross:  {ts_diff:+.0f} cal total ({b1_ts*30:+.0f}/month)<br>"
-            f"Theil-Sen ex-adj: {adj_diff:+.0f} cal total ({b1_adj*30:+.0f}/month)"
+            f"<b>Trend (start to end)</b><br>"
+            f"Theil-Sen: {ts_diff:+.0f} cal total ({b1_ts*30:+.0f}/month)"
         ),
         showarrow=False,
         bgcolor='white', bordercolor='#ccc', borderwidth=1,
@@ -216,7 +142,7 @@ def chart_tdee_trend(unified, tdee):
     )
 
     fig.update_layout(
-        title='<b>TDEE Trend — Gross vs Exercise-Adjusted, OLS vs Robust (Theil-Sen)</b>',
+        title='<b>TDEE Trend</b>',
         xaxis_title='Date',
         yaxis_title='Estimated TDEE (cal/day)',
         hovermode=HOVER,
@@ -228,11 +154,7 @@ def chart_tdee_trend(unified, tdee):
 
     out = CHARTS_DIR / 'chart_tdee_trend.html'
     fig.write_html(str(out))
-    print(
-        f"Wrote {out.name}\n"
-        f"  Theil-Sen gross:  {fmt_slope(b1_ts)}  ({b1_ts*7:+.1f} cal/week)\n"
-        f"  Theil-Sen ex-adj: {fmt_slope(b1_adj)} ({b1_adj*7:+.1f} cal/week)"
-    )
+    print(f"Wrote {out.name}\n  Theil-Sen: {fmt_slope(b1_ts)} ({b1_ts*7:+.1f} cal/week)")
     return fig
 
 
@@ -508,10 +430,9 @@ def chart_calorie_targets(unified, tdee, goal_weight=GOAL_WEIGHT, goal_deficit_a
     """
     Simulates weight loss with a weight-keyed tapering deficit and derives the timeline.
 
-    Supports three TDEE source modes, selectable via buttons at the top of the chart:
+    Supports two TDEE source modes, selectable via buttons at the top of the chart:
       1. Projected TDEE  — interpolates from observed 14d TDEE to goal_tdee (config)
-      2. MSJ dynamic     — BMR×1.2 + 14d exercise avg (dynamic formula)
-      3. MSJ static      — BMR × MSJ_ACTIVITY_MULTIPLIER (pure formula, no exercise data)
+      2. MSJ static      — BMR × MSJ_ACTIVITY_MULTIPLIER (pure formula, no exercise data)
 
     Two panels:
       1. Calories over time: TDEE, recommended intake, monthly targets
@@ -521,7 +442,7 @@ def chart_calorie_targets(unified, tdee, goal_weight=GOAL_WEIGHT, goal_deficit_a
     MAX_SIM_DAYS = 730
 
     last_date    = tdee.index.max()
-    start_weight = tdee['weight_7d_avg'].dropna().iloc[-1]
+    start_weight = tdee['weight_14d_avg'].dropna().iloc[-1]
     lbs_to_lose  = max(start_weight - goal_weight, 0)
     start_intake = float(tdee['calories_14d_avg'].dropna().iloc[-1])
 
@@ -530,7 +451,7 @@ def chart_calorie_targets(unified, tdee, goal_weight=GOAL_WEIGHT, goal_deficit_a
 
     # --- Simulation helper ---
     def run_sim(start_tdee, goal_tdee_val):
-        start_deficit = start_tdee - start_intake
+        start_deficit = START_DEFICIT if START_DEFICIT is not None else (start_tdee - start_intake)
         records, w = [], start_weight
         for day in range(MAX_SIM_DAYS):
             if w <= goal_weight:
@@ -552,20 +473,15 @@ def chart_calorie_targets(unified, tdee, goal_weight=GOAL_WEIGHT, goal_deficit_a
         return sim, start_tdee, start_deficit
 
     # --- Build mode list: (label, start_tdee, goal_tdee_val) ---
-    start_tdee_proj = float(tdee['tdee_14d_smoothed'].dropna().iloc[-1])
+    start_tdee_proj = float(tdee['tdee_30d_avg'].dropna().iloc[-1])
     modes = [('Projected TDEE', start_tdee_proj, goal_tdee)]
 
-    mst_cols = ['mst_tdee_smoothed', 'mst_tdee_static']
-    if all(c in tdee.columns for c in mst_cols) and all(v is not None for v in [DOB, HEIGHT_CM, SEX]):
+    if 'mst_tdee_static' in tdee.columns and all(v is not None for v in [DOB, HEIGHT_CM, SEX]):
         dob_ts      = pd.Timestamp(DOB)
         current_age = int((last_date - dob_ts).days / 365.25)
         offset      = 5 if SEX == 'male' else -161
         goal_bmr    = 10 * (goal_weight / 2.20462) + 6.25 * HEIGHT_CM - 5 * current_age + offset
-        ex_avg      = float(tdee['exercise_14d_avg'].dropna().iloc[-1])
 
-        modes.append(('MSJ (BMR×1.2 + exercise)',
-                      float(tdee['mst_tdee_smoothed'].dropna().iloc[-1]),
-                      goal_bmr * 1.2 + ex_avg))
         modes.append((f'MSJ (BMR×{MSJ_ACTIVITY_MULTIPLIER})',
                       float(tdee['mst_tdee_static'].dropna().iloc[-1]),
                       goal_bmr * MSJ_ACTIVITY_MULTIPLIER))
@@ -574,9 +490,9 @@ def chart_calorie_targets(unified, tdee, goal_weight=GOAL_WEIGHT, goal_deficit_a
     sim_results = [(label, *run_sim(st, gt)) for label, st, gt in modes]
 
     # --- Historical context (fixed across modes) ---
-    hist_tdee   = tdee['tdee_14d_smoothed'].dropna().tail(HIST_CONTEXT)
-    hist_intake = tdee['calories_7d_avg'].dropna().tail(HIST_CONTEXT)
-    hist_weight = tdee['weight_7d_avg'].dropna().tail(HIST_CONTEXT)
+    hist_tdee   = tdee['tdee_30d_avg'].dropna().tail(HIST_CONTEXT)
+    hist_intake = tdee['calories_14d_avg'].dropna().tail(HIST_CONTEXT)
+    hist_weight = tdee['weight_14d_avg'].dropna().tail(HIST_CONTEXT)
     max_goal_date = max(r[1].index[-1] for r in sim_results)
 
     # -----------------------------------------------------------------------
@@ -608,7 +524,7 @@ def chart_calorie_targets(unified, tdee, goal_weight=GOAL_WEIGHT, goal_deficit_a
 
     fig.add_trace(go.Scatter(
         x=hist_weight.index, y=hist_weight.values,
-        mode='lines', name='Weight (7d avg, historical)',
+        mode='lines', name='Weight (14d avg, historical)',
         line=dict(color=COLORS['weight_7d'], width=2),
         hovertemplate='%{x|%b %d}: %{y:.1f} lbs<extra></extra>',
     ), row=2, col=1)
@@ -625,7 +541,7 @@ def chart_calorie_targets(unified, tdee, goal_weight=GOAL_WEIGHT, goal_deficit_a
             fill='toself', fillcolor='rgba(39,174,96,0.08)',
             line=dict(color='rgba(0,0,0,0)'),
             name='Deficit zone', hoverinfo='skip',
-            showlegend=(mode_idx == 0), visible=visible,
+            showlegend=True, visible=visible,
         ), row=1, col=1)
 
         # Projected TDEE line
@@ -634,7 +550,7 @@ def chart_calorie_targets(unified, tdee, goal_weight=GOAL_WEIGHT, goal_deficit_a
             mode='lines', name='Projected TDEE',
             line=dict(color=COLORS['tdee_7d'], width=2, dash='dash'),
             hovertemplate='%{x|%b %d} proj TDEE: %{y:.0f}<extra></extra>',
-            showlegend=(mode_idx == 0), visible=visible,
+            showlegend=True, visible=visible,
         ), row=1, col=1)
 
         # Recommended intake line
@@ -644,7 +560,7 @@ def chart_calorie_targets(unified, tdee, goal_weight=GOAL_WEIGHT, goal_deficit_a
             line=dict(color=COLORS['intake_rec'], width=2.5),
             hovertemplate='%{x|%b %d} target: %{y:.0f} cal (%{customdata:.1f} lbs/wk)<extra></extra>',
             customdata=sim['rate_lbs_week'],
-            showlegend=(mode_idx == 0), visible=visible,
+            showlegend=True, visible=visible,
         ), row=1, col=1)
 
         # Monthly intake labels as a text trace (toggleable)
@@ -665,7 +581,7 @@ def chart_calorie_targets(unified, tdee, goal_weight=GOAL_WEIGHT, goal_deficit_a
             mode='lines', name='Simulated weight',
             line=dict(color=COLORS['weight_7d'], width=2, dash='dash'),
             hovertemplate='%{x|%b %d} sim: %{y:.1f} lbs<extra></extra>',
-            showlegend=(mode_idx == 0), visible=visible,
+            showlegend=True, visible=visible,
         ), row=2, col=1)
 
     # --- Shapes (static) ---
@@ -749,7 +665,7 @@ def chart_calorie_targets(unified, tdee, goal_weight=GOAL_WEIGHT, goal_deficit_a
 
         fig.update_layout(updatemenus=[dict(
             type='buttons', direction='right',
-            x=0.5, xanchor='center', y=1.13, yanchor='top',
+            x=0.5, xanchor='center', y=1.60, yanchor='top',
             buttons=buttons, showactive=True,
             bgcolor='#f0f2f5', bordercolor='#ddd',
             font=dict(size=12),
@@ -760,8 +676,8 @@ def chart_calorie_targets(unified, tdee, goal_weight=GOAL_WEIGHT, goal_deficit_a
         hovermode=HOVER,
         template=TEMPLATE,
         height=700,
-        margin=dict(b=130, t=100),
-        legend=dict(orientation='h', yanchor='top', y=-0.10, xanchor='center', x=0.5),
+        margin=dict(b=160, t=130),
+        legend=dict(orientation='h', yanchor='top', y=-0.15, xanchor='center', x=0.5),
         xaxis=dict(range=[hist_tdee.index[0], sim_results[0][1].index[-1]], autorange=False),
     )
     fig.update_yaxes(title_text='cal/day', row=1, col=1)

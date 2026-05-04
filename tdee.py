@@ -23,7 +23,7 @@ TDEE Method (energy balance):
 import pandas as pd
 import numpy as np
 from pathlib import Path
-from config import CALS_PER_LB, LOW_ACTIVITY_THRESHOLD, DOB, HEIGHT_CM, SEX, MSJ_ACTIVITY_MULTIPLIER
+from config import CALS_PER_LB, DOB, HEIGHT_CM, SEX, MSJ_ACTIVITY_MULTIPLIER
 
 DATA_DIR      = Path(__file__).parent
 PROCESSED_DIR = DATA_DIR / 'data' / 'processed'
@@ -103,18 +103,6 @@ def build_tdee_results():
     # 30-day rolling average of gross TDEE — slowest/smoothest trend view
     results['tdee_30d_avg'] = results['tdee_14d'].rolling(30, min_periods=15).mean()
 
-    # Exercise-adjusted TDEE: removes the exercise contribution to isolate baseline
-    # metabolic rate. During low-activity periods (e.g. holiday breaks) this stays
-    # stable while raw TDEE drops, making metabolic adaptation trends cleaner.
-    results['tdee_adj_14d']          = results['tdee_14d'] - results['exercise_14d_avg']
-    results['tdee_adj_14d_smoothed'] = results['tdee_adj_14d'].rolling(7, min_periods=4).mean()
-    results['tdee_adj_30d_avg']      = results['tdee_adj_14d'].rolling(30, min_periods=15).mean()
-
-    # Low-activity flag: 14d exercise avg is below 30% of its overall median.
-    # Used to shade outlier periods on trend charts.
-    ex_median = results['exercise_14d_avg'].median()
-    results['low_activity'] = results['exercise_14d_avg'] < (ex_median * LOW_ACTIVITY_THRESHOLD)
-
     # Daily calorie deficit (positive = deficit, negative = surplus)
     results['daily_deficit_14d'] = results['tdee_14d'] - results['calories_in']
     results['deficit_7d_avg']    = results['daily_deficit_14d'].rolling(7, min_periods=4).mean()
@@ -136,9 +124,7 @@ def build_tdee_results():
         wt_kg   = df['weight_smooth'] / 2.20462
         offset  = 5 if SEX == 'male' else -161
         mst_bmr = 10 * wt_kg + 6.25 * HEIGHT_CM - 5 * ages + offset
-        results['mst_tdee']          = mst_bmr * 1.2 + results['exercise_14d_avg']
-        results['mst_tdee_smoothed'] = results['mst_tdee'].rolling(7, min_periods=4).mean()
-        results['mst_tdee_static']   = mst_bmr * MSJ_ACTIVITY_MULTIPLIER
+        results['mst_tdee_static'] = mst_bmr * MSJ_ACTIVITY_MULTIPLIER
 
     results.to_csv(PROCESSED_DIR / 'tdee_results.csv')
     print("tdee_results.csv written")

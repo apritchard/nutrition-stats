@@ -30,6 +30,13 @@ GOAL_DEFICIT_AT_TARGET = 250
 # Adjust based on your size, medical guidance, and activity level.
 SAFE_FLOOR = 1500
 
+# Starting calorie deficit for the simulation (cal/day).
+# When set, this overrides the deficit derived from (current TDEE - recent intake),
+# which can produce a misleadingly small deficit if recent intake has been high.
+# Example: 500 = ~1 lb/week deficit at the start of the projection.
+# Set to None to derive automatically from (current TDEE - 14d avg intake).
+START_DEFICIT = None
+
 # ---------------------------------------------------------------------------
 # Projection settings
 # ---------------------------------------------------------------------------

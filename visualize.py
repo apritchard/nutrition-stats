@@ -96,10 +96,10 @@ def chart_tdee(unified, tdee):
 
     # --- TDEE estimates ---
     fig.add_trace(go.Scatter(
-        x=tdee.index, y=tdee['tdee_7d_smoothed'],
-        mode='lines', name='TDEE via 7-day window (smoothed)',
+        x=tdee.index, y=tdee['tdee_14d_smoothed'],
+        mode='lines', name='TDEE via 14-day window (smoothed)',
         line=dict(color=COLORS['tdee_7d'], width=2),
-        hovertemplate='TDEE 7d: %{y:.0f} cal<extra></extra>',
+        hovertemplate='TDEE 14d: %{y:.0f} cal<extra></extra>',
     ), row=1, col=1)
 
     # 30-day rolling average
@@ -110,23 +110,16 @@ def chart_tdee(unified, tdee):
         hovertemplate='TDEE 30d: %{y:.0f} cal<extra></extra>',
     ), row=1, col=1)
 
-    # Reference: 7-day calorie intake avg
+    # Reference: 14-day calorie intake avg
     fig.add_trace(go.Scatter(
-        x=tdee.index, y=tdee['calories_7d_avg'],
-        mode='lines', name='Avg Calories Eaten (7-day)',
+        x=tdee.index, y=tdee['calories_14d_avg'],
+        mode='lines', name='Avg Calories Eaten (14-day)',
         line=dict(color=COLORS['calories_avg'], width=1.5, dash='dot'),
         hovertemplate='Avg intake: %{y:.0f} cal<extra></extra>',
     ), row=1, col=1)
 
-    # Mifflin-St Jeor formula reference (BMR × 1.2 + 14d exercise avg)
-    if 'mst_tdee' in tdee.columns:
-        mst = tdee['mst_tdee_smoothed'].dropna()
-        fig.add_trace(go.Scatter(
-            x=mst.index, y=mst.values,
-            mode='lines', name='MSJ formula (BMR×1.2 + exercise)',
-            line=dict(color=COLORS['mst_tdee'], width=1.5, dash='dot'),
-            hovertemplate='MSJ dynamic: %{y:.0f} cal<extra></extra>',
-        ), row=1, col=1)
+    # Mifflin-St Jeor formula reference
+    if 'mst_tdee_static' in tdee.columns:
         mst_s = tdee['mst_tdee_static'].dropna()
         fig.add_trace(go.Scatter(
             x=mst_s.index, y=mst_s.values,
@@ -149,12 +142,12 @@ def chart_tdee(unified, tdee):
         hovertemplate='%{x|%b %d} exercise: %{y:.0f} cal<extra></extra>',
     ), row=2, col=1)
 
-    # Exercise 7-day avg line
+    # Exercise 14-day avg line
     fig.add_trace(go.Scatter(
-        x=tdee.index, y=tdee['exercise_7d_avg'],
-        mode='lines', name='Exercise 7-Day Avg',
+        x=tdee.index, y=tdee['exercise_14d_avg'],
+        mode='lines', name='Exercise 14-Day Avg',
         line=dict(color=COLORS['exercise_avg'], width=2),
-        hovertemplate='Ex 7d avg: %{y:.0f} cal<extra></extra>',
+        hovertemplate='Ex 14d avg: %{y:.0f} cal<extra></extra>',
     ), row=2, col=1)
 
     fig.update_layout(
@@ -200,18 +193,18 @@ def chart_dashboard(unified, tdee):
     ), row=1, col=1)
 
     fig.add_trace(go.Scatter(
-        x=tdee.index, y=tdee['weight_7d_avg'],
-        mode='lines', name='Weight 7-Day Avg',
+        x=tdee.index, y=tdee['weight_14d_avg'],
+        mode='lines', name='Weight 14-Day Avg',
         line=dict(color=COLORS['weight_7d'], width=2),
-        hovertemplate='7d: %{y:.1f} lbs<extra></extra>',
+        hovertemplate='14d: %{y:.1f} lbs<extra></extra>',
     ), row=1, col=1)
 
     # === Row 2: TDEE ===
     fig.add_trace(go.Scatter(
-        x=tdee.index, y=tdee['tdee_7d_smoothed'],
-        mode='lines', name='TDEE (7-day)',
+        x=tdee.index, y=tdee['tdee_14d_smoothed'],
+        mode='lines', name='TDEE (14-day)',
         line=dict(color=COLORS['tdee_7d'], width=2),
-        hovertemplate='TDEE 7d: %{y:.0f}<extra></extra>',
+        hovertemplate='TDEE 14d: %{y:.0f}<extra></extra>',
     ), row=2, col=1)
 
     # 30-day rolling average
@@ -222,23 +215,16 @@ def chart_dashboard(unified, tdee):
         hovertemplate='TDEE 30d: %{y:.0f}<extra></extra>',
     ), row=2, col=1)
 
-    # 7-day calorie intake avg for reference on TDEE panel
+    # 14-day calorie intake avg for reference on TDEE panel
     fig.add_trace(go.Scatter(
-        x=tdee.index, y=tdee['calories_7d_avg'],
-        mode='lines', name='Avg Intake (7-day)',
+        x=tdee.index, y=tdee['calories_14d_avg'],
+        mode='lines', name='Avg Intake (14-day)',
         line=dict(color=COLORS['calories_avg'], width=1.5, dash='dot'),
         hovertemplate='Avg intake: %{y:.0f}<extra></extra>',
     ), row=2, col=1)
 
     # Mifflin-St Jeor formula reference
-    if 'mst_tdee' in tdee.columns:
-        mst = tdee['mst_tdee_smoothed'].dropna()
-        fig.add_trace(go.Scatter(
-            x=mst.index, y=mst.values,
-            mode='lines', name='MSJ formula (BMR×1.2 + exercise)',
-            line=dict(color=COLORS['mst_tdee'], width=1.5, dash='dot'),
-            hovertemplate='MSJ dynamic: %{y:.0f}<extra></extra>',
-        ), row=2, col=1)
+    if 'mst_tdee_static' in tdee.columns:
         mst_s = tdee['mst_tdee_static'].dropna()
         fig.add_trace(go.Scatter(
             x=mst_s.index, y=mst_s.values,
@@ -261,8 +247,8 @@ def chart_dashboard(unified, tdee):
     ), row=3, col=1)
 
     fig.add_trace(go.Scatter(
-        x=tdee.index, y=tdee['exercise_7d_avg'],
-        mode='lines', name='Exercise 7-Day Avg',
+        x=tdee.index, y=tdee['exercise_14d_avg'],
+        mode='lines', name='Exercise 14-Day Avg',
         line=dict(color=COLORS['exercise_avg'], width=2),
         hovertemplate='Ex avg: %{y:.0f}<extra></extra>',
     ), row=3, col=1)
